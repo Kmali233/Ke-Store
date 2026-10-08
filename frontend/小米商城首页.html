@@ -1,0 +1,995 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>小米商城 - 小米智能门锁 5 MAX 上新</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%23ff6700'/%3E%3Ctext x='50' y='72' font-size='62' text-anchor='middle' fill='white' font-family='Arial' font-weight='bold'%3Emi%3C/text%3E%3C/svg%3E">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --orange:#ff6700;
+  --bg:#f5f5f5;
+  --text:#333;
+  --gray:#b0b0b0;
+  --container:1226px;
+}
+html{scroll-behavior:smooth}
+body{
+  font-family:"PingFang SC","Hiragino Sans GB","Microsoft YaHei","Helvetica Neue",Arial,sans-serif;
+  background:var(--bg);color:var(--text);font-size:14px;-webkit-font-smoothing:antialiased;
+}
+a{text-decoration:none;color:inherit}
+ul{list-style:none}
+img{display:block;max-width:100%}
+button{font-family:inherit}
+.wrap{width:var(--container);margin:0 auto}
+
+/* ===== 顶部通栏 ===== */
+.topbar{height:40px;background:#333;font-size:12px;color:#b0b0b0}
+.topbar .wrap{display:flex;justify-content:space-between;align-items:center;height:40px}
+.topbar a{color:#b0b0b0;white-space:nowrap}
+.topbar a:hover{color:#fff}
+.topbar .sep{margin:0 7px;color:#5a5a5a}
+.topbar .right{display:flex;align-items:center}
+.topbar .cart{display:flex;align-items:center;gap:6px;background:#424242;padding:0 16px;height:40px;margin-left:14px}
+.topbar .cart:hover{background:var(--orange);color:#fff}
+.topbar .cart svg{width:16px}
+
+/* ===== 主导航 ===== */
+.header{background:#fff;height:100px}
+.header .wrap{display:flex;align-items:center;height:100px}
+.logo{width:56px;height:56px;background:var(--orange);border-radius:14px;display:flex;align-items:center;justify-content:center;margin-right:34px;flex-shrink:0}
+.logo svg{width:38px;height:38px}
+.nav{display:flex}
+.nav a{padding:0 11px;font-size:16px;color:#333;height:100px;line-height:100px}
+.nav a:hover{color:var(--orange)}
+.search{margin-left:auto;display:flex;width:296px;height:50px;border:1px solid #e0e0e0}
+.search input{flex:1;border:0;outline:0;padding:0 14px;font-size:14px;color:#333}
+.search button{width:54px;border:0;background:#fff;border-left:1px solid #e0e0e0;cursor:pointer;color:#616161}
+.search button:hover{background:var(--orange);color:#fff}
+.search button svg{width:22px;height:22px}
+
+/* ===== Hero ===== */
+.hero{display:flex;height:460px;gap:14px}
+.cats{width:234px;background:#3d3d3d}
+.cats a{display:flex;justify-content:space-between;align-items:center;height:46px;padding:0 20px;color:#e6e6e6;font-size:14px}
+.cats a:hover{background:var(--orange);color:#fff}
+.cats a .lab{display:flex;gap:10px;align-items:center}
+.cats a .ar{width:10px;height:10px}
+.stage{flex:1;position:relative;overflow:hidden}
+.slides{display:flex;height:100%;transition:transform .55s ease}
+.slide{min-width:100%;height:100%;position:relative}
+.slide > img{width:100%;height:100%;object-fit:cover}
+.slide.fake{display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;gap:18px}
+.slide.fake h2{font-size:40px;letter-spacing:2px}
+.slide.fake p{font-size:18px;opacity:.85}
+.slide.fake .btn{margin-top:14px;border:1px solid rgba(255,255,255,.7);padding:12px 46px;color:#fff}
+.slide.fake .btn:hover{background:#fff;color:#333}
+.fake1{background:linear-gradient(120deg,#2b2b35,#5a5a6e)}
+.fake2{background:linear-gradient(120deg,#3a2f2a,#7a5a45)}
+.arrow{position:absolute;top:0;height:100%;width:56px;border:0;background:transparent;color:#ddd;font-size:40px;cursor:pointer;opacity:0;transition:opacity .2s,background .2s}
+.stage:hover .arrow{opacity:1}
+.arrow:hover{background:rgba(0,0,0,.25)}
+.arrow.prev{left:0}
+.arrow.next{right:0}
+.dots{position:absolute;bottom:18px;right:28px;display:flex;gap:10px}
+.dot{width:10px;height:10px;border-radius:50%;background:rgba(255,255,255,.4);border:0;cursor:pointer;padding:0}
+.dot.active{background:#fff}
+
+/* ===== 快捷区 ===== */
+.quick{display:flex;gap:14px;height:178px;margin-top:14px}
+.qs{width:234px;display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(2,1fr);gap:1px;background:#6a625b}
+.qs a{background:#5f5750;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;color:#cfc7bf;font-size:12px}
+.qs a:hover{color:#fff}
+.qs svg{width:26px;height:26px}
+.qcards{flex:1;display:flex;gap:14px}
+.qcard{flex:1;background:#fff;display:flex;flex-direction:column;align-items:center;padding:14px 8px 0}
+.qcard h3{font-size:18px;font-weight:600}
+.qcard .sub{font-size:12px;color:#757575;margin-top:6px}
+.qcard .pic{flex:1;display:flex;align-items:flex-end;justify-content:center;width:100%}
+.qcard .pic img{max-width:100%;max-height:110px;object-fit:contain}
+.qcard:hover h3{color:var(--orange)}
+
+/* ===== 通栏横幅 ===== */
+.band{margin-top:26px}
+.band img{width:100%;height:92px;object-fit:cover}
+
+/* ===== 商品分区 ===== */
+.zone{margin-top:34px}
+.zone-head{display:flex;justify-content:space-between;align-items:center;height:52px}
+.zone-title{font-size:24px;font-weight:500}
+.zone-head .right{display:flex;align-items:center;gap:34px}
+.tabs{display:flex;gap:28px}
+.tabs a{font-size:16px;color:#424242;padding-bottom:5px;border-bottom:2px solid transparent;cursor:pointer}
+.tabs a.active{color:var(--orange);border-bottom-color:var(--orange)}
+.tabs a:hover{color:var(--orange)}
+.seemore{font-size:16px;color:#424242;display:flex;align-items:center;gap:8px;cursor:pointer}
+.seemore .c{width:26px;height:26px;border-radius:50%;background:#b0b0b0;color:#fff;display:flex;align-items:center;justify-content:center}
+.seemore:hover{color:var(--orange)}
+.seemore:hover .c{background:var(--orange)}
+
+.grid{display:grid;grid-template-columns:repeat(5,1fr);grid-auto-rows:300px;gap:14px}
+.big{grid-row:span 2;overflow:hidden}
+.big.single{grid-row:span 1}
+.big img{width:100%;height:100%;object-fit:cover;transition:transform .4s}
+.big:hover img{transform:scale(1.04)}
+.card{background:#fff;display:flex;flex-direction:column;align-items:center;text-align:center;padding:0 14px}
+.card .pic{height:180px;width:100%;display:flex;align-items:center;justify-content:center}
+.card .pic img{max-width:100%;max-height:178px;object-fit:contain;transition:transform .35s}
+.card:hover .pic img{transform:translateY(-6px)}
+.card h3{font-size:14px;font-weight:400}
+.card .desc{color:#a8a8a8;font-size:12px;margin-top:9px;height:32px;overflow:hidden;line-height:16px}
+.card .price{margin-top:8px;color:var(--orange)}
+.card .price .now{font-size:15px}
+.card .price del{color:#b5b5b5;margin-left:7px;font-size:12px}
+.card:hover h3{color:var(--orange)}
+.raised{box-shadow:0 10px 24px rgba(0,0,0,.13)}
+
+/* c4 堆叠：横版卡 + 浏览更多 */
+.stack{display:flex;flex-direction:column;gap:14px;height:100%}
+.hcard{background:#fff;flex:1;display:flex;align-items:center;padding:0 14px;gap:6px;min-height:0}
+.hcard .t{flex:1;min-width:0}
+.hcard h4{font-size:13px;font-weight:400;line-height:18px}
+.hcard .price{color:var(--orange);margin-top:9px;font-size:15px}
+.hcard .price del{color:#b5b5b5;font-size:11px;margin-left:5px}
+.hcard img{width:92px;flex-shrink:0;max-height:128px;object-fit:contain}
+.hcard:hover h4{color:var(--orange)}
+.morecard{background:#fff;flex:1;display:flex;align-items:center;justify-content:space-between;padding:0 22px;cursor:pointer}
+.morecard .t p:first-child{font-size:17px}
+.morecard .t p:last-child{color:#b0b0b0;font-size:12px;margin-top:7px}
+.morecard .circle{width:56px;height:56px;border:2px solid var(--orange);border-radius:50%;display:flex;align-items:center;justify-content:center;color:var(--orange);transition:all .25s}
+.morecard .circle svg{width:24px;height:24px}
+.morecard:hover .circle{background:var(--orange);color:#fff}
+
+/* ===== 巨能写横幅 ===== */
+.pen{margin-top:40px}
+.pen img{width:100%;height:134px;object-fit:cover}
+
+/* ===== 服务承诺 ===== */
+.services{background:#fff;margin-top:30px}
+.services .wrap{display:flex;height:100px;align-items:center}
+.services .item{flex:1;display:flex;align-items:center;justify-content:center;gap:11px;font-size:16px;color:#616161;border-right:1px solid #f0f0f0;height:44px}
+.services .item:last-child{border:0}
+.services svg{width:32px;height:32px}
+
+/* ===== 页脚链接 ===== */
+.foot{background:#fff}
+.foot .wrap{display:flex;padding:46px 0 40px}
+.foot .col{flex:1}
+.foot .col h5{font-size:14px;font-weight:500;margin-bottom:8px}
+.foot .col a{display:inline-block;color:#757575;font-size:12px;margin-top:15px;width:100%}
+.foot .col a:hover{color:var(--orange)}
+.foot .hotline{width:200px;text-align:center;border-left:1px solid #f0f0f0}
+.foot .tel{font-size:24px;color:var(--orange);font-weight:500}
+.foot .tel-time{font-size:12px;color:#757575;margin:7px 0 13px}
+.foot .tel-btn{border:1px solid var(--orange);color:var(--orange);padding:7px 26px;font-size:12px;display:inline-block}
+.foot .tel-btn:hover{background:var(--orange);color:#fff}
+.foot .gap{height:20px}
+
+/* ===== 版权 ===== */
+.copy{background:#fff;border-top:1px solid #eee}
+.copy .wrap{padding:32px 0 10px;display:flex;gap:22px}
+.copy .logo2{width:52px;height:52px;flex-shrink:0}
+.copy .txt{font-size:12px;color:#888;line-height:22px}
+.copy .txt a{color:#888}
+.copy .txt a:hover{color:var(--orange)}
+.copy .badges{display:flex;gap:10px;margin-top:10px}
+.copy .badges img{height:40px}
+.slogan{text-align:center;color:#c4c4c4;font-size:20px;letter-spacing:3px;padding:26px 0 44px;background:#fff}
+
+/* ===== 右侧悬浮工具栏 ===== */
+.side{position:fixed;right:0;top:50%;transform:translateY(-50%);z-index:60;width:82px;border:1px solid #eee;border-right:0}
+.side a{background:#fff;display:flex;flex-direction:column;align-items:center;gap:7px;padding:15px 0;font-size:12px;color:#757575;border-bottom:1px solid #f0f0f0;position:relative}
+.side a svg{width:26px;height:26px}
+.side a:hover{color:var(--orange)}
+.side .backtop{display:none}
+.side .backtop.show{display:flex}
+
+/* ===== Toast ===== */
+.toast{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,.78);color:#fff;padding:14px 28px;border-radius:6px;font-size:14px;z-index:100;opacity:0;pointer-events:none;transition:opacity .25s}
+.toast.show{opacity:1}
+
+/* ===== 响应式 ===== */
+@media(max-width:1260px){
+  :root{--container:94%}
+  .grid{grid-template-columns:repeat(3,1fr)}
+  .big{grid-column:span 3;grid-row:auto;height:300px}
+  .big img{object-position:center 30%}
+  .stack{grid-column:span 1}
+  .side{display:none}
+  .nav{display:none}
+}
+@media(max-width:760px){
+  .grid{grid-template-columns:repeat(2,1fr)}
+  .big{grid-column:span 2;height:240px}
+  .topbar .left{overflow:hidden;white-space:nowrap}
+  .search{width:180px}
+  .qs{display:none}
+  .qcards .qcard:nth-child(3){display:none}
+  .services .item{font-size:12px}
+  .foot .wrap{flex-wrap:wrap;gap:24px}
+  .foot .col{flex:0 0 30%}
+  .foot .hotline{width:100%;border:0}
+}
+</style>
+</head>
+<body>
+
+<!-- ===== 顶部通栏 ===== -->
+<div class="topbar">
+  <div class="wrap">
+    <div class="left">
+      <a href="#" data-toast="小米官网">小米官网</a><span class="sep">|</span>
+      <a href="#" data-toast="小米商城">小米商城</a><span class="sep">|</span>
+      <a href="#" data-toast="小米澎湃OS">小米澎湃OS</a><span class="sep">|</span>
+      <a href="#" data-toast="小米汽车">小米汽车</a><span class="sep">|</span>
+      <a href="#" data-toast="云服务">云服务</a><span class="sep">|</span>
+      <a href="#" data-toast="IoT">IoT</a><span class="sep">|</span>
+      <a href="#" data-toast="有品">有品</a><span class="sep">|</span>
+      <a href="#" data-toast="小爱开放平台">小爱开放平台</a><span class="sep">|</span>
+      <a href="#" data-toast="资质证照">资质证照</a><span class="sep">|</span>
+      <a href="#" data-toast="协议规则">协议规则</a><span class="sep">|</span>
+      <a href="#" data-toast="下载小米商城App">下载app</a><span class="sep">|</span>
+      <a href="#" data-toast="选择地区">Select Location</a>
+    </div>
+    <div class="right">
+      <a href="#" data-toast="登录页面（静态演示）">登录</a><span class="sep">|</span>
+      <a href="#" data-toast="注册页面（静态演示）">注册</a><span class="sep">|</span>
+      <a href="#" data-toast="消息通知">消息通知</a>
+      <a class="cart" href="#" data-toast="购物车是空的">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="9" cy="20" r="1.4"/><circle cx="18" cy="20" r="1.4"/><path d="M3 4h2l2.4 11.2a1.5 1.5 0 0 0 1.5 1.2h8.2a1.5 1.5 0 0 0 1.5-1.2L21 8H6"/></svg>
+        购物车（0）
+      </a>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 主导航 ===== -->
+<header class="header">
+  <div class="wrap">
+    <a class="logo" href="#top" title="小米商城">
+      <svg viewBox="0 0 100 60" fill="none"><path d="M14 46V14h8l6 18 6-18h8v32h-7V26l-5 15h-4l-5-15v20z" fill="#fff"/><path d="M52 46V14h17v7H59v6h9v7h-9v5h11v7z" fill="#fff"/></svg>
+    </a>
+    <nav class="nav">
+      <a href="#" data-toast="Xiaomi 手机">Xiaomi手机</a>
+      <a href="#" data-toast="REDMI 手机">REDMI手机</a>
+      <a href="#" data-toast="电视分类">电视</a>
+      <a href="#" data-toast="笔记本分类">笔记本</a>
+      <a href="#" data-toast="平板分类">平板</a>
+      <a href="#" data-toast="家电分类">家电</a>
+      <a href="#" data-toast="路由器分类">路由器</a>
+      <a href="#" data-toast="服务中心">服务中心</a>
+      <a href="#" data-toast="社区">社区</a>
+    </nav>
+    <div class="search">
+      <input id="searchInput" type="text" placeholder="显示器">
+      <button id="searchBtn" title="搜索">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      </button>
+    </div>
+  </div>
+</header>
+
+<a id="top"></a>
+<div class="wrap">
+  <!-- ===== Hero：分类菜单 + 轮播 ===== -->
+  <section class="hero">
+    <div class="cats">
+      <a href="#" data-toast="手机分类"><span class="lab">手机</span><svg class="ar" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6"><path d="m4 2 4 4-4 4"/></svg></a>
+      <a href="#" data-toast="电视分类"><span class="lab">电视</span><svg class="ar" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6"><path d="m4 2 4 4-4 4"/></svg></a>
+      <a href="#" data-toast="家电分类"><span class="lab">家电</span><svg class="ar" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6"><path d="m4 2 4 4-4 4"/></svg></a>
+      <a href="#" data-toast="笔记本 平板 显示器"><span class="lab">笔记本&nbsp;平板&nbsp;显示器</span><svg class="ar" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6"><path d="m4 2 4 4-4 4"/></svg></a>
+      <a href="#" data-toast="出行 穿戴"><span class="lab">出行&nbsp;穿戴</span><svg class="ar" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6"><path d="m4 2 4 4-4 4"/></svg></a>
+      <a href="#" data-toast="耳机 音箱"><span class="lab">耳机&nbsp;音箱</span><svg class="ar" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6"><path d="m4 2 4 4-4 4"/></svg></a>
+      <a href="#" data-toast="健康 儿童"><span class="lab">健康&nbsp;儿童</span><svg class="ar" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6"><path d="m4 2 4 4-4 4"/></svg></a>
+      <a href="#" data-toast="生活 箱包"><span class="lab">生活&nbsp;箱包</span><svg class="ar" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6"><path d="m4 2 4 4-4 4"/></svg></a>
+      <a href="#" data-toast="智能 路由器"><span class="lab">智能&nbsp;路由器</span><svg class="ar" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6"><path d="m4 2 4 4-4 4"/></svg></a>
+      <a href="#" data-toast="电源 配件"><span class="lab">电源&nbsp;配件</span><svg class="ar" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6"><path d="m4 2 4 4-4 4"/></svg></a>
+    </div>
+    <div class="stage" id="stage">
+      <div class="slides" id="slides">
+        <div class="slide">
+          <img src="assets/banner-lock.jpg" alt="小米智能门锁 5 MAX">
+        </div>
+        <div class="slide fake fake1">
+          <h2>小米上新季</h2>
+          <p>科技好物 限时直降</p>
+          <a class="btn" href="#" data-toast="静态演示：活动会场">立即逛会场</a>
+        </div>
+        <div class="slide fake fake2">
+          <h2>以旧换新</h2>
+          <p>旧机当钱花 补贴再升级</p>
+          <a class="btn" href="#" data-toast="静态演示：以旧换新">立即估价</a>
+        </div>
+      </div>
+      <button class="arrow prev" id="prev" aria-label="上一张">&#8249;</button>
+      <button class="arrow next" id="next" aria-label="下一张">&#8250;</button>
+      <div class="dots" id="dots"></div>
+    </div>
+  </section>
+
+  <!-- ===== 快捷区 ===== -->
+  <section class="quick">
+    <div class="qs">
+      <a href="#" data-toast="保障服务"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>保障服务</a>
+      <a href="#" data-toast="企业团购"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 21V6l8-3 8 3v15"/><path d="M8 21v-6h8v6"/><path d="M8 10h.01M12 10h.01M16 10h.01"/></svg>企业团购</a>
+      <a href="#" data-toast="F码通道"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M9 9h5a2 2 0 0 1 0 4H10v3"/></svg>F码通道</a>
+      <a href="#" data-toast="米粉卡"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 7h8M8 11h4"/></svg>米粉卡</a>
+      <a href="#" data-toast="以旧换新"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 12a8 8 0 0 1 14-5.3M20 4v4h-4"/><path d="M20 12a8 8 0 0 1-14 5.3M4 20v-4h4"/></svg>以旧换新</a>
+      <a href="#" data-toast="话费充值"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="6" y="3" width="12" height="18" rx="2"/><path d="M10 18h4"/></svg>话费充值</a>
+    </div>
+    <div class="qcards">
+      <a class="qcard" href="#" data-toast="REDMI K90 Max">
+        <h3>K90 Max</h3><p class="sub">天玑 9500｜超强风冷主动散热</p>
+        <div class="pic"><img src="assets/k90-max.jpg" alt="K90 Max"></div>
+      </a>
+      <a class="qcard" href="#" data-toast="Xiaomi Pad 9 Pro Max">
+        <h3>Xiaomi Pad 9 Pro Max</h3><p class="sub">玄戒O3 AI 旗舰处理器</p>
+        <div class="pic"><img src="assets/pad9-pro-max-quick.jpg" alt="Pad 9 Pro Max"></div>
+      </a>
+      <a class="qcard" href="#" data-toast="Xiaomi Watch S5">
+        <h3>Xiaomi Watch S5 <sup>41mm</sup></h3><p class="sub">全新一代智能手表</p>
+        <div class="pic"><img src="assets/watch-s5.jpg" alt="Watch S5"></div>
+      </a>
+    </div>
+  </section>
+
+  <!-- ===== Xiaomi 17 横幅 ===== -->
+  <a class="band" href="#" data-toast="Xiaomi 17 系列">
+    <img src="assets/banner-xiaomi17.jpg" alt="Xiaomi 17">
+  </a>
+</div>
+
+<!-- ===== 分区：手机 ===== -->
+<section class="zone wrap">
+  <div class="zone-head">
+    <h2 class="zone-title">手机</h2>
+    <div class="right">
+      <a class="seemore" data-toast="查看全部手机">查看更多<span class="c"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></span></a>
+    </div>
+  </div>
+  <div class="grid">
+    <a class="big" data-toast="Xiaomi 17 Max"><img src="assets/phone-big.jpg" alt="Xiaomi 17 Max"></a>
+    <div class="card" data-toast="Xiaomi 18 Pro Max">
+      <div class="pic"><img src="assets/xiaomi-18-pro-max.jpg" alt=""></div>
+      <h3>Xiaomi 18 Pro Max</h3>
+      <p class="desc">比肩相机成像质感｜第六代骁龙 8 超级处理器</p>
+      <p class="price"><span class="now">6999元起</span></p>
+    </div>
+    <div class="card" data-toast="Xiaomi 18 Pro">
+      <div class="pic"><img src="assets/xiaomi-18-pro.jpg" alt=""></div>
+      <h3>Xiaomi 18 Pro</h3>
+      <p class="desc">徕卡专业三摄｜第六代骁龙 8 超级至尊</p>
+      <p class="price"><span class="now">5999元起</span></p>
+    </div>
+    <div class="card" data-toast="Xiaomi 18 Fold">
+      <div class="pic"><img src="assets/xiaomi-18-fold.jpg" alt=""></div>
+      <h3>Xiaomi 18 Fold</h3>
+      <p class="desc">一手掌握，一眼开阔</p>
+      <p class="price"><span class="now">10999元起</span></p>
+    </div>
+    <div class="card" data-toast="REDMI K100 Pro Max">
+      <div class="pic"><img src="assets/redmi-k100-pro-max.jpg" alt=""></div>
+      <h3>REDMI K100 Pro Max</h3>
+      <p class="desc">旗舰双芯｜185Hz电竞高刷屏｜2亿超清影像</p>
+      <p class="price"><span class="now">4499元起</span></p>
+    </div>
+    <div class="card" data-toast="REDMI K100 Pro">
+      <div class="pic"><img src="assets/redmi-k100-pro.jpg" alt=""></div>
+      <h3>REDMI K100 Pro</h3>
+      <p class="desc">旗舰双芯｜185Hz 高刷屏｜2亿旗舰主摄</p>
+      <p class="price"><span class="now">3999元起</span></p>
+    </div>
+    <div class="card" data-toast="REDMI 17 5G">
+      <div class="pic"><img src="assets/redmi-17-5g.jpg" alt=""></div>
+      <h3>REDMI 17 5G</h3>
+      <p class="desc">大屏长续航 久用也流畅</p>
+      <p class="price"><span class="now">999元起</span><del>1099元</del></p>
+    </div>
+    <div class="card" data-toast="REDMI Note 17 Pro">
+      <div class="pic"><img src="assets/redmi-note-17-pro.jpg" alt=""></div>
+      <h3>REDMI Note 17 Pro</h3>
+      <p class="desc">抗摔 防水 长续航</p>
+      <p class="price"><span class="now">1599元起</span></p>
+    </div>
+    <div class="card" data-toast="REDMI Note 17">
+      <div class="pic"><img src="assets/redmi-note-17.jpg" alt=""></div>
+      <h3>REDMI Note 17</h3>
+      <p class="desc">大屏 大电量</p>
+      <p class="price"><span class="now">1249元起</span><del>1299元</del></p>
+    </div>
+  </div>
+</section>
+
+<!-- ===== 分区：智能穿戴 ===== -->
+<section class="zone wrap">
+  <div class="zone-head">
+    <h2 class="zone-title">智能穿戴</h2>
+    <div class="right">
+      <div class="tabs">
+        <a class="active">耳机</a><a>穿戴</a>
+      </div>
+    </div>
+  </div>
+  <div class="grid">
+    <a class="big" data-toast="小米手环 11"><img src="assets/band-big.jpg" alt="小米手环11"></a>
+    <div class="card" data-toast="REDMI 头戴降噪耳机">
+      <div class="pic"><img src="assets/redmi-headphone.jpg" alt=""></div>
+      <h3>REDMI 头戴降噪耳机</h3>
+      <p class="desc">40mm 超大镀钛动圈｜深度主动降噪｜超长续航</p>
+      <p class="price"><span class="now">349元</span></p>
+    </div>
+    <div class="card" data-toast="Xiaomi 耳夹式耳机">
+      <div class="pic"><img src="assets/xiaomi-clip-earphone.jpg" alt=""></div>
+      <h3>Xiaomi 耳夹式耳机</h3>
+      <p class="desc">轻盈无感 佩戴舒适｜超级小爱 智能随行</p>
+      <p class="price"><span class="now">749元</span><del>849元</del></p>
+    </div>
+    <div class="card" data-toast="REDMI Buds 8">
+      <div class="pic"><img src="assets/redmi-buds8.jpg" alt=""></div>
+      <h3>REDMI Buds 8</h3>
+      <p class="desc">至高 50dB 4kHz宽频降噪｜11mm 高保真单元</p>
+      <p class="price"><span class="now">229元</span><del>249元</del></p>
+    </div>
+    <div class="card" data-toast="REDMI Buds 8 活力版">
+      <div class="pic"><img src="assets/redmi-buds8-lite.jpg" alt=""></div>
+      <h3>REDMI Buds 8 活力版</h3>
+      <p class="desc">声享澎湃音质 电量超长相随</p>
+      <p class="price"><span class="now">99元</span><del>119元</del></p>
+    </div>
+    <div class="card" data-toast="REDMI Buds 8 青春版">
+      <div class="pic"><img src="assets/redmi-buds8-youth.jpg" alt=""></div>
+      <h3>REDMI Buds 8 青春版</h3>
+      <p class="desc">42dB 深度主动降噪｜12.4mm超大镀振单元</p>
+      <p class="price"><span class="now">139元</span></p>
+    </div>
+    <div class="card" data-toast="REDMI Buds 8 Pro">
+      <div class="pic"><img src="assets/redmi-buds8-pro.jpg" alt=""></div>
+      <h3>REDMI Buds 8 Pro</h3>
+      <p class="desc">55dB深度降噪｜新增智能查找｜同档旗舰音质</p>
+      <p class="price"><span class="now">369元</span><del>399元</del></p>
+    </div>
+    <div class="card" data-toast="Xiaomi Buds 6">
+      <div class="pic"><img src="assets/xiaomi-buds6.jpg" alt=""></div>
+      <h3>Xiaomi Buds 6</h3>
+      <p class="desc">仿生曲线设计｜哈曼金耳朵联合调音｜耳挂舒适</p>
+      <p class="price"><span class="now">649元</span><del>699元</del></p>
+    </div>
+    <div class="stack">
+      <a class="morecard" data-toast="浏览更多耳机">
+        <div class="t"><p>浏览更多</p><p>耳机</p></div>
+        <span class="circle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span>
+      </a>
+    </div>
+  </div>
+</section>
+
+<!-- ===== 分区：笔记本 | 平板 ===== -->
+<section class="zone wrap">
+  <div class="zone-head">
+    <h2 class="zone-title">笔记本 | 平板</h2>
+    <div class="right">
+      <div class="tabs"><a class="active">热门</a></div>
+    </div>
+  </div>
+  <div class="grid">
+    <a class="big" data-toast="Xiaomi Book Pro 14"><img src="assets/book-big.jpg" alt="Xiaomi Book Pro 14"></a>
+    <div class="card" data-toast="Xiaomi Pad 9 Pro">
+      <div class="pic"><img src="assets/pad9-pro.jpg" alt=""></div>
+      <h3>Xiaomi Pad 9 Pro</h3>
+      <p class="desc">12.5英寸3.2K高清护眼屏｜第五代骁龙旗舰平台</p>
+      <p class="price"><span class="now">3799元起</span></p>
+    </div>
+    <div class="card" data-toast="Xiaomi Pad 9">
+      <div class="pic"><img src="assets/pad9.jpg" alt=""></div>
+      <h3>Xiaomi Pad 9</h3>
+      <p class="desc">11.2英寸3.2K高清护眼屏｜第四代骁龙平台</p>
+      <p class="price"><span class="now">2999元起</span></p>
+    </div>
+    <div class="card" data-toast="Xiaomi Pad 9 Pro Max">
+      <div class="pic"><img src="assets/pad9-pro-max.jpg" alt=""></div>
+      <h3>Xiaomi Pad 9 Pro Max</h3>
+      <p class="desc">玄戒O3 AI 旗舰处理器｜13.3英寸高清大屏</p>
+      <p class="price"><span class="now">4799元起</span></p>
+    </div>
+    <div class="card raised" data-toast="REDMI K Pad 2">
+      <div class="pic"><img src="assets/redmi-k-pad2.jpg" alt=""></div>
+      <h3>REDMI K Pad 2</h3>
+      <p class="desc">8.8&Prime; 3K LCD 高亮电竞屏｜天玑 9500</p>
+      <p class="price"><span class="now">3599元起</span></p>
+    </div>
+    <div class="card" data-toast="REDMI Pad 2 Pro 5G">
+      <div class="pic"><img src="assets/redmi-pad2-pro-5g.jpg" alt=""></div>
+      <h3>REDMI Pad 2 Pro 5G</h3>
+      <p class="desc">2.5K超清护眼屏｜12000mAh超大容量 长续航</p>
+      <p class="price"><span class="now">2799元</span><del>2899元</del></p>
+    </div>
+    <div class="card" data-toast="Xiaomi Book Pro 14">
+      <div class="pic"><img src="assets/xiaomi-book-pro14.jpg" alt=""></div>
+      <h3>Xiaomi Book Pro 14</h3>
+      <p class="desc">第三代英特尔酷睿 Ultra 处理器｜至高独显配置</p>
+      <p class="price"><span class="now">9499元起</span></p>
+    </div>
+    <div class="card" data-toast="REDMI Book 16 2026">
+      <div class="pic"><img src="assets/redmi-book16.jpg" alt=""></div>
+      <h3>REDMI Book 16 2026</h3>
+      <p class="desc">英特尔酷睿Ultra，2.5K超清镜面屏，轻薄全金属</p>
+      <p class="price"><span class="now">6699元起</span></p>
+    </div>
+    <div class="stack">
+      <div class="hcard" data-toast="REDMI Book 14 2026">
+        <div class="t"><h4>REDMI Book 14 2026</h4><p class="price">6499元起</p></div>
+        <img src="assets/redmi-book14-2026.jpg" alt="">
+      </div>
+      <a class="morecard" data-toast="浏览更多热门商品">
+        <div class="t"><p>浏览更多</p><p>热门</p></div>
+        <span class="circle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span>
+      </a>
+    </div>
+  </div>
+</section>
+
+<!-- ===== 分区：家电 ===== -->
+<section class="zone wrap">
+  <div class="zone-head">
+    <h2 class="zone-title">家电</h2>
+    <div class="right">
+      <div class="tabs">
+        <a class="active">热门</a><a>电视影音</a><a>空调</a><a>冰箱</a><a>洗衣机</a>
+      </div>
+    </div>
+  </div>
+  <div class="grid">
+    <a class="big single" data-toast="小米电视 S Mini LED 2026"><img src="assets/tv-big.jpg" alt="小米电视S Mini LED"></a>
+    <div class="card" data-toast="小米电视 S Pro Mini LED 系列">
+      <div class="pic"><img src="assets/tv-s-pro.jpg" alt=""></div>
+      <h3>小米电视S Pro Mini LED系列</h3>
+      <p class="desc">288Hz超高刷、4+64G大存储</p>
+      <p class="price"><span class="now">4999元起</span></p>
+    </div>
+    <div class="card" data-toast="小米电视 S Mini LED 2026 系列">
+      <div class="pic"><img src="assets/tv-s-mini.jpg" alt=""></div>
+      <h3>小米电视S Mini LED 2026系列</h3>
+      <p class="desc">2000nits峰值亮度、小米澎湃OS3、高刷护眼</p>
+      <p class="price"><span class="now">4199元起</span></p>
+    </div>
+    <div class="card" data-toast="米家冰箱 十字430L 2026款">
+      <div class="pic"><img src="assets/fridge-cross430.jpg" alt=""></div>
+      <h3>米家冰箱 十字430L 2026款</h3>
+      <p class="desc">纤薄机身小占地｜精控变温更养鲜</p>
+      <p class="price"><span class="now">1899元</span><del>2299元</del></p>
+    </div>
+    <div class="card" data-toast="米家洗衣机 Pro">
+      <div class="pic"><img src="assets/washer-pro.jpg" alt=""></div>
+      <h3>米家洗衣机Pro 超电解智投 洗烘</h3>
+      <p class="desc">12kg大容量+9kg烘干，超电解祛渍除菌</p>
+      <p class="price"><span class="now">2999元</span><del>3999元</del></p>
+    </div>
+    <a class="big single" data-toast="三区洗衣机 Pro"><img src="assets/washer3-big.jpg" alt="三区洗衣机Pro"></a>
+    <div class="card" data-toast="米家冰箱 对开门系列">
+      <div class="pic"><img src="assets/fridge-double.jpg" alt=""></div>
+      <h3>米家冰箱 对开门系列</h3>
+      <p class="desc">海量空间 压缩机10年质保</p>
+      <p class="price"><span class="now">1999元起</span></p>
+    </div>
+    <div class="card" data-toast="巨省电 小米空调 1.5匹">
+      <div class="pic"><img src="assets/ac-1p5.jpg" alt=""></div>
+      <h3>巨省电 小米空调 1.5匹新1级能效</h3>
+      <p class="desc">强劲制冷｜高效节能｜智能互联</p>
+      <p class="price"><span class="now">1999元</span><del>2499元</del></p>
+    </div>
+    <div class="card" data-toast="巨省电Pro 立式3匹">
+      <div class="pic"><img src="assets/tower-ac-3p.jpg" alt=""></div>
+      <h3>巨省电Pro 立式3匹 超一级能效</h3>
+      <p class="desc">硬核飓风 智能省电 客厅首选</p>
+      <p class="price"><span class="now">3909元</span><del>6499元</del></p>
+    </div>
+    <div class="stack">
+      <div class="hcard" data-toast="米家分区洗烘一体机 15kg">
+        <div class="t"><h4>米家分区洗烘一体机 15kg</h4><p class="price">5999元</p></div>
+        <img src="assets/washer-dryer-15kg.jpg" alt="">
+      </div>
+      <a class="morecard" data-toast="浏览更多热门家电">
+        <div class="t"><p>浏览更多</p><p>热门</p></div>
+        <span class="circle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span>
+      </a>
+    </div>
+  </div>
+</section>
+
+<!-- ===== 分区：生活电器 ===== -->
+<section class="zone wrap">
+  <div class="zone-head">
+    <h2 class="zone-title">生活电器</h2>
+    <div class="right">
+      <div class="tabs">
+        <a class="active">风扇</a><a>扫地机</a><a>空净</a><a>清洁</a><a>环境</a>
+      </div>
+    </div>
+  </div>
+  <div class="grid">
+    <a class="big single" data-toast="米家扫拖机器人 5"><img src="assets/robot-big.jpg" alt="米家扫拖机器人5"></a>
+    <div class="card" data-toast="米家智能变频循环扇 Pro">
+      <div class="pic"><img src="assets/fan-loop-pro.jpg" alt=""></div>
+      <h3>米家智能变频循环扇Pro</h3>
+      <p class="desc">3D广角自然风，2分钟焕新整屋空气</p>
+      <p class="price"><span class="now">499元</span><del>599元</del></p>
+    </div>
+    <div class="card" data-toast="米家智能直流变频落地扇 1X">
+      <div class="pic"><img src="assets/fan-1x.jpg" alt=""></div>
+      <h3>米家智能直流变频落地扇1X 升级</h3>
+      <p class="desc">静音舒适自然风，支持充电宝供电，一机多用</p>
+      <p class="price"><span class="now">299元</span><del>329元</del></p>
+    </div>
+    <div class="card" data-toast="米家落地扇">
+      <div class="pic"><img src="assets/fan-floor.jpg" alt=""></div>
+      <h3>米家落地扇</h3>
+      <p class="desc">静享智能轻风</p>
+      <p class="price"><span class="now">219元</span><del>299元</del></p>
+    </div>
+    <div class="card raised" data-toast="米家直流变频台式循环扇">
+      <div class="pic"><img src="assets/fan-table.jpg" alt=""></div>
+      <h3>米家直流变频台式循环扇</h3>
+      <p class="desc">小身材大风量，轻松循环整屋</p>
+      <p class="price"><span class="now">279元</span><del>349元</del></p>
+    </div>
+    <a class="big single" data-toast="米家空气净化器 6"><img src="assets/purifier-big.jpg" alt="米家空气净化器6"></a>
+    <div class="card" data-toast="米家智能直流变频循环落地扇">
+      <div class="pic"><img src="assets/fan-loop-floor.jpg" alt=""></div>
+      <h3>米家智能直流变频循环落地扇 电池版</h3>
+      <p class="desc">落地扇、循环扇、无线扇三合一</p>
+      <p class="price"><span class="now">599元</span></p>
+    </div>
+    <div class="card" data-toast="米家直流变频落地扇 Pro">
+      <div class="pic"><img src="assets/fan-floor-pro.jpg" alt=""></div>
+      <h3>米家直流变频落地扇 Pro</h3>
+      <p class="desc">收纳有序，与自然风行同在</p>
+      <p class="price"><span class="now">399元</span><del>499元</del></p>
+    </div>
+    <div class="card" data-toast="米家智能蒸发式冷风扇">
+      <div class="pic"><img src="assets/fan-cool.jpg" alt=""></div>
+      <h3>米家智能蒸发式冷风扇</h3>
+      <p class="desc">4倍降温效果｜三效合一｜创新专利无雾加湿</p>
+      <p class="price"><span class="now">499元</span><del>599元</del></p>
+    </div>
+    <div class="stack">
+      <div class="hcard" data-toast="米家智能直流变频塔扇 2">
+        <div class="t"><h4>米家智能直流变频塔扇2</h4><p class="price">319元</p></div>
+        <img src="assets/tower-fan2.jpg" alt="">
+      </div>
+      <a class="morecard" data-toast="浏览更多风扇">
+        <div class="t"><p>浏览更多</p><p>风扇</p></div>
+        <span class="circle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span>
+      </a>
+    </div>
+  </div>
+</section>
+
+<!-- ===== 分区：厨房电器 ===== -->
+<section class="zone wrap">
+  <div class="zone-head">
+    <h2 class="zone-title">厨房电器</h2>
+    <div class="right">
+      <div class="tabs">
+        <a class="active">净水器</a><a>烟灶</a><a>电饭煲</a><a>微蒸烤</a>
+      </div>
+    </div>
+  </div>
+  <div class="grid">
+    <a class="big single" data-toast="米家净水器 1200G Pro"><img src="assets/water-big.jpg" alt="米家净水器1200G Pro"></a>
+    <div class="card" data-toast="米家前置过滤器">
+      <div class="pic"><img src="assets/pre-filter.jpg" alt=""></div>
+      <h3>米家前置过滤器</h3>
+      <p class="desc">家庭净水的第一道防线</p>
+      <p class="price"><span class="now">259元</span><del>499元</del></p>
+    </div>
+    <div class="card" data-toast="米家即热管线机">
+      <div class="pic"><img src="assets/hot-line.jpg" alt=""></div>
+      <h3>米家即热管线机</h3>
+      <p class="desc">净水好搭档，100度真沸腾</p>
+      <p class="price"><span class="now">999元</span><del>1299元</del></p>
+    </div>
+    <div class="card" data-toast="米家双核净水器 1200G Pro">
+      <div class="pic"><img src="assets/dual-water1200.jpg" alt=""></div>
+      <h3>米家双核净水器 1200G Pro</h3>
+      <p class="desc">主RO使用寿命8年 双芯长效过滤</p>
+      <p class="price"><span class="now">1799元</span><del>3499元</del></p>
+    </div>
+    <div class="card raised" data-toast="米家净水器 1600G">
+      <div class="pic"><img src="assets/water1600.jpg" alt=""></div>
+      <h3>米家净水器1600G</h3>
+      <p class="desc">2.1秒一杯水，还原自来水的澎湃流速</p>
+      <p class="price"><span class="now">2499元</span><del>3499元</del></p>
+    </div>
+    <a class="big single" data-toast="米家欧式吸油烟灶套装 S2"><img src="assets/hood-big.jpg" alt="米家欧式吸油烟灶套装S2"></a>
+    <div class="stack">
+      <a class="morecard" data-toast="浏览更多净水器">
+        <div class="t"><p>浏览更多</p><p>净水器</p></div>
+        <span class="circle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span>
+      </a>
+    </div>
+  </div>
+</section>
+
+<!-- ===== 分区：智能家居 ===== -->
+<section class="zone wrap">
+  <div class="zone-head">
+    <h2 class="zone-title">智能家居</h2>
+    <div class="right">
+      <div class="tabs">
+        <a class="active">小爱音箱</a><a>门锁门铃</a><a>路由器</a><a>智能设备</a>
+      </div>
+    </div>
+  </div>
+  <div class="grid">
+    <a class="big single" data-toast="Xiaomi Sound 2 Max"><img src="assets/sound-big.jpg" alt="Xiaomi Sound 2 Max"></a>
+    <div class="card" data-toast="Xiaomi 智能音箱 Pro">
+      <div class="pic"><img src="assets/speaker-pro.jpg" alt=""></div>
+      <h3>Xiaomi 智能音箱 Pro</h3>
+      <p class="desc">连续指令语控，一句话操作多个智能设备</p>
+      <p class="price"><span class="now">329元</span><del>369元</del></p>
+    </div>
+    <div class="card" data-toast="Xiaomi 智能音箱">
+      <div class="pic"><img src="assets/speaker.jpg" alt=""></div>
+      <h3>Xiaomi 智能音箱</h3>
+      <p class="desc">对话连贯自然，问答专业详实</p>
+      <p class="price"><span class="now">199元</span><del>249元</del></p>
+    </div>
+    <div class="card" data-toast="Xiaomi Sound 2 Pro">
+      <div class="pic"><img src="assets/sound2-pro.jpg" alt=""></div>
+      <h3>Xiaomi Sound 2 Pro</h3>
+      <p class="desc">强大音质，精简至极</p>
+      <p class="price"><span class="now">1099元</span><del>1699元</del></p>
+    </div>
+    <div class="card raised" data-toast="Xiaomi 智能家庭屏 Max 27">
+      <div class="pic"><img src="assets/home-screen-max27.jpg" alt=""></div>
+      <h3>Xiaomi 智能家庭屏 Max 27</h3>
+      <p class="desc">「超级小爱」闺蜜机，可移动的宅家娱乐中心</p>
+      <p class="price"><span class="now">3399.15元</span><del>3999元</del></p>
+    </div>
+    <a class="big single" data-toast="小米智能门锁 2 Pro"><img src="assets/lock2pro-big.jpg" alt="小米智能门锁2 Pro"></a>
+    <div class="card" data-toast="Xiaomi 智能家庭屏 11">
+      <div class="pic"><img src="assets/home-screen11.jpg" alt=""></div>
+      <h3>Xiaomi 智能家庭屏 11</h3>
+      <p class="desc">海量影音内容，AI智控全家</p>
+      <p class="price"><span class="now">1299元</span><del>1499元</del></p>
+    </div>
+    <div class="card" data-toast="Xiaomi 智能家庭屏 10">
+      <div class="pic"><img src="assets/home-screen10.jpg" alt=""></div>
+      <h3>Xiaomi智能家庭屏 10</h3>
+      <p class="desc">MIUI Home｜10.1&Prime;高清大屏｜115°超广角看护</p>
+      <p class="price"><span class="now">839元</span><del>999元</del></p>
+    </div>
+    <div class="card" data-toast="Xiaomi 智能家庭屏 8 云台版">
+      <div class="pic"><img src="assets/home-screen8.jpg" alt=""></div>
+      <h3>Xiaomi 智能家庭屏 8 云台版</h3>
+      <p class="desc">360°AI看护，智能生活一屏陪伴</p>
+      <p class="price"><span class="now">699元</span><del>899元</del></p>
+    </div>
+    <div class="stack">
+      <div class="hcard" data-toast="小米小爱音箱 Play 增强版">
+        <div class="t"><h4>小米小爱音箱 Play 增强版</h4><p class="price">129元</p></div>
+        <img src="assets/xiaoai-play.jpg" alt="">
+      </div>
+      <a class="morecard" data-toast="浏览更多小爱音箱">
+        <div class="t"><p>浏览更多</p><p>小爱音箱</p></div>
+        <span class="circle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span>
+      </a>
+    </div>
+  </div>
+</section>
+
+<!-- ===== 巨能写横幅 ===== -->
+<div class="wrap pen">
+  <a data-toast="小米巨能写中性笔"><img src="assets/banner-pen.jpg" alt="小米巨能写中性笔"></a>
+</div>
+
+<!-- ===== 服务承诺 ===== -->
+<div class="services">
+  <div class="wrap">
+    <div class="item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14.7 6.3a3.5 3.5 0 0 0-4.9 4.9L4 17l3 3 5.8-5.8a3.5 3.5 0 0 0 4.9-4.9l-2.6 2.6-2.1-2.1z"/></svg>
+      预约维修服务
+    </div>
+    <div class="item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 12a8 8 0 0 1 13.7-5.7"/><path d="M18 3v4h-4"/><path d="M20 12a8 8 0 0 1-13.7 5.7"/><path d="M6 21v-4h4"/></svg>
+      7天无理由退货
+    </div>
+    <div class="item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>
+      15天免费换货
+    </div>
+    <div class="item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="8" width="18" height="13" rx="1.5"/><path d="M3 12h18M12 8l-2-4H7l1 4M12 8l2-4h3l-1 4"/></svg>
+      满69包邮
+    </div>
+    <div class="item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 21s7-6.2 7-11a7 7 0 1 0-14 0c0 4.8 7 11 7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>
+      1100余家售后网点
+    </div>
+  </div>
+</div>
+
+<!-- ===== 页脚链接 ===== -->
+<footer class="foot">
+  <div class="wrap">
+    <div class="col">
+      <h5>选购指南</h5>
+      <a data-toast="手机分类">手机</a>
+      <a data-toast="电视分类">电视</a>
+      <a data-toast="笔记本分类">笔记本</a>
+      <a data-toast="平板分类">平板</a>
+      <a data-toast="穿戴分类">穿戴</a>
+      <a data-toast="耳机分类">耳机</a>
+      <a data-toast="家电分类">家电</a>
+      <a data-toast="路由器分类">路由器</a>
+      <a data-toast="音箱分类">音箱</a>
+      <a data-toast="配件分类">配件</a>
+    </div>
+    <div class="col">
+      <h5>服务中心</h5>
+      <a data-toast="申请售后">申请售后</a>
+      <a data-toast="服务政策">服务政策</a>
+      <a data-toast="服务价格">服务价格</a>
+      <a data-toast="订单查询">订单查询</a>
+      <a data-toast="以旧换新">以旧换新</a>
+      <a data-toast="保障服务">保障服务</a>
+      <a data-toast="防伪查询">防伪查询</a>
+      <a data-toast="F码通道">F码通道</a>
+    </div>
+    <div class="col">
+      <h5>线下门店</h5>
+      <a data-toast="小米之家">小米之家</a>
+      <a data-toast="服务网点">服务网点</a>
+      <a data-toast="授权体验店/专区">授权体验店/专区</a>
+    </div>
+    <div class="col">
+      <h5>关于小米</h5>
+      <a data-toast="了解小米">了解小米</a>
+      <a data-toast="加入小米">加入小米</a>
+      <a data-toast="投资者关系">投资者关系</a>
+      <a data-toast="ESG与可持续发展">ESG与可持续发展</a>
+      <a data-toast="廉洁举报">廉洁举报</a>
+    </div>
+    <div class="col">
+      <h5>关注我们</h5>
+      <a data-toast="新浪微博">新浪微博</a>
+      <a data-toast="官方微信">官方微信</a>
+      <a data-toast="联系我们">联系我们</a>
+      <a data-toast="公益基金会">公益基金会</a>
+      <a data-toast="小米高校合作">小米高校合作</a>
+    </div>
+    <div class="hotline">
+      <div class="tel">950816</div>
+      <div class="tel-time">8:00-18:00（仅收市话费）</div>
+      <a class="tel-btn" data-toast="正在接入人工客服">人工客服</a>
+      <div class="gap"></div>
+      <div class="tel">950818</div>
+      <div class="tel-time">8:00-18:00（仅收市话费）</div>
+      <a class="tel-btn" data-toast="正在接入人工客服">人工客服</a>
+    </div>
+  </div>
+</footer>
+
+<!-- ===== 版权 ===== -->
+<div class="copy">
+  <div class="wrap">
+    <a class="logo2" href="#top">
+      <svg viewBox="0 0 100 100" width="52" height="52"><rect width="100" height="100" rx="22" fill="#ff6700"/><text x="50" y="72" font-size="58" text-anchor="middle" fill="white" font-family="Arial" font-weight="bold">mi</text></svg>
+    </a>
+    <div class="txt">
+      <a data-toast="小米商城">小米商城</a> | <a data-toast="小米澎湃OS">小米澎湃OS</a> | <a data-toast="米家">米家</a> | <a data-toast="多看">多看</a> | <a data-toast="游戏">游戏</a> | <a data-toast="音乐">音乐</a> | <a data-toast="小米智能存储">小米智能存储</a> | <a data-toast="政企服务">政企服务</a> | <a data-toast="小米天猫店">小米天猫店</a> | <a data-toast="小米集团隐私政策">小米集团隐私政策</a> | <a data-toast="儿童信息保护规则">小米公司儿童信息保护规则</a> | <a data-toast="小米商城隐私政策">小米商城隐私政策</a> | <a data-toast="小米商城用户协议">小米商城用户协议</a> | <a data-toast="问题反馈">问题反馈</a> | <a data-toast="选择地区">Select Location</a><br>
+      北京互联网法院法律服务工作站 | 中国消费者协会 | 北京市消费者协会<br>
+      &copy; mi.com 京ICP证110507号 京ICP备10046444号 京公网安备11010802020134号 京网文[2026]0015-006号<br>
+      （京）网械平台备字（2018）第00005号 药品医疗器械网络信息服务备案 (京)网药械信息备字（2024）第00478号 营业执照 医疗器械质量公告<br>
+      增值电信业务经营许可证编号：京B2-20180851 网络食品经营备案 京食药网食备202010048 食品经营许可证 新出发京批字第直220280号<br>
+      违法和不良信息举报电话：171-5104-4404 知识产权侵权投诉 本网站所列数据，除特殊说明，所有数据均出自我司实验室测试
+    </div>
+  </div>
+  <div class="slogan">让全球每个人都能享受科技带来的美好生活</div>
+</div>
+
+<!-- ===== 右侧悬浮工具栏 ===== -->
+<div class="side">
+  <a data-toast="下载小米商城手机APP">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="7" y="2.5" width="10" height="19" rx="2"/><path d="M11 18.5h2"/></svg>
+    手机APP
+  </a>
+  <a data-toast="个人中心（静态演示）">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="8" r="4"/><path d="M4.5 20.5a7.5 7.5 0 0 1 15 0"/></svg>
+    个人中心
+  </a>
+  <a data-toast="售后服务">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M14.7 6.3a3.5 3.5 0 0 0-4.9 4.9L4 17l3 3 5.8-5.8a3.5 3.5 0 0 0 4.9-4.9l-2.6 2.6-2.1-2.1z"/></svg>
+    售后服务
+  </a>
+  <a data-toast="人工客服">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 13v-1a8 8 0 0 1 16 0v1"/><rect x="3" y="13" width="4" height="6" rx="1.5"/><rect x="17" y="13" width="4" height="6" rx="1.5"/><path d="M20 19v1a3 3 0 0 1-3 3h-3"/></svg>
+    人工客服
+  </a>
+  <a data-toast="购物车是空的">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="9" cy="20" r="1.4"/><circle cx="18" cy="20" r="1.4"/><path d="M3 4h2l2.4 11.2a1.5 1.5 0 0 0 1.5 1.2h8.2a1.5 1.5 0 0 0 1.5-1.2L21 8H6"/></svg>
+    购物车
+  </a>
+  <a class="backtop" href="#top">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M6 11l6-6 6 6"/></svg>
+    回顶部
+  </a>
+</div>
+
+<script>
+/* ===== Toast ===== */
+var toastEl = document.createElement('div');
+toastEl.className = 'toast';
+document.body.appendChild(toastEl);
+var toastTimer;
+function toast(msg){
+  toastEl.textContent = msg;
+  toastEl.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(function(){ toastEl.classList.remove('show'); }, 1600);
+}
+document.addEventListener('click', function(e){
+  var el = e.target.closest('[data-toast]');
+  if(el){ e.preventDefault(); toast(el.getAttribute('data-toast')); }
+});
+
+/* ===== 搜索 ===== */
+document.getElementById('searchBtn').addEventListener('click', function(){
+  var v = document.getElementById('searchInput').value.trim();
+  toast(v ? '搜索：' + v : '请输入要搜索的关键词');
+});
+document.getElementById('searchInput').addEventListener('keydown', function(e){
+  if(e.key === 'Enter') document.getElementById('searchBtn').click();
+});
+
+/* ===== 轮播 ===== */
+(function(){
+  var slides = document.getElementById('slides');
+  var total = slides.children.length;
+  var dotsBox = document.getElementById('dots');
+  var idx = 0, timer;
+  for(var i=0;i<total;i++){
+    (function(i){
+      var b = document.createElement('button');
+      b.className = 'dot' + (i===0?' active':'');
+      b.addEventListener('click', function(){ go(i); reset(); });
+      dotsBox.appendChild(b);
+    })(i);
+  }
+  function go(n){
+    idx = (n + total) % total;
+    slides.style.transform = 'translateX(-' + (idx*100) + '%)';
+    var ds = dotsBox.children;
+    for(var k=0;k<ds.length;k++) ds[k].className = 'dot' + (k===idx?' active':'');
+  }
+  function next(){ go(idx+1); }
+  function prev(){ go(idx-1); }
+  function reset(){ clearInterval(timer); timer = setInterval(next, 5000); }
+  document.getElementById('next').addEventListener('click', function(){ next(); reset(); });
+  document.getElementById('prev').addEventListener('click', function(){ prev(); reset(); });
+  reset();
+})();
+
+/* ===== Tab 切换（静态演示，仅高亮） ===== */
+document.querySelectorAll('.tabs').forEach(function(tabBox){
+  tabBox.querySelectorAll('a').forEach(function(t){
+    t.addEventListener('click', function(e){
+      e.preventDefault();
+      tabBox.querySelectorAll('a').forEach(function(x){ x.classList.remove('active'); });
+      t.classList.add('active');
+      toast('静态演示：仅展示「' + t.textContent + '」分类内容');
+    });
+  });
+});
+
+/* ===== 回顶部 ===== */
+var backtop = document.querySelector('.backtop');
+window.addEventListener('scroll', function(){
+  if(window.scrollY > 500) backtop.classList.add('show');
+  else backtop.classList.remove('show');
+});
+</script>
+</body>
+</html>
