@@ -16,3 +16,9 @@ target/
 
 # WorkBuddy local data (memory / backup)
 .workbuddy/
+
+# 环境变量（含密钥，严禁提交）
+.env
+.env.local
+.env.*.local
+
