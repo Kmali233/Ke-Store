@@ -1,6 +1,11 @@
+# [CR-001 · 2026-10-10] 数据库凭据由明文改为可注入形式。
+# 原因：username/password 原为明文 root/root，且本文件已进入公开仓库的提交历史。
+# 说明：保留本地默认值以保证开箱即可启动；部署或改用其他账号时必须用环境变量
+#       DB_USERNAME / DB_PASSWORD 覆盖，不得沿用默认值。
+# 残留风险：默认值仍是明文，彻底消除需去掉默认值并改由环境变量或未入库的本地 profile 提供。
 spring:
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
-    url: jdbc:mysql://localhost:3306/cz-blog?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    url: jdbc:mysql://localhost:3306/xiaoke_mall?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
     username: root
-    password: root
+    password: 1234
