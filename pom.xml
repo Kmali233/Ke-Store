@@ -24,9 +24,11 @@
         <module>xiaoke-product</module>
     </modules>
 
+    <!--    项目属性：新增属性时在此追加    -->
     <properties>
         <java.version>17</java.version>
         <mybatis-plus.version>3.5.7</mybatis-plus.version>
+        <jjwt.version>0.12.5</jjwt.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
 
