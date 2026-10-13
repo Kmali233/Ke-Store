@@ -9,11 +9,13 @@ import lombok.Getter;
 public enum ResultCode {
 
     SUCCESS(200, "操作成功"),
-    FAIL(500, "操作失败"),
     PARAM_ERROR(400, "参数错误"),
     UNAUTHORIZED(401, "未认证"),
     FORBIDDEN(403, "无权限"),
-    NOT_FOUND(404, "资源不存在");
+    NOT_FOUND(404, "资源不存在"),
+    CONFLICT(409, "资源状态冲突"),
+    FAIL(500, "操作失败"),
+    SERVICE_UNAVAILABLE(503, "服务暂不可用");
 
     private final int code;
     private final String message;
