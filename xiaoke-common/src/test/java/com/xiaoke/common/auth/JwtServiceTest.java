@@ -5,6 +5,8 @@ import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
@@ -82,9 +84,10 @@ class JwtServiceTest {
     @Test
     @DisplayName("J6 issuer 不匹配 401")
     void j6_wrongIssuer() {
-        JwtProperties other = props(SECRET_A);
-        other.setIssuer("someone-else");
-        String token = new JwtService(other, Clock.fixed(T0, ZoneOffset.UTC)).issue(1L, "kevin");
+        String token = Jwts.builder().issuer("someone-else").subject("1")
+                .claim("userId", 1L).claim("username", "kevin").issuedAt(Date.from(T0))
+                .expiration(Date.from(T0.plusSeconds(7200)))
+                .signWith(Keys.hmacShaKeyFor(Base64.getDecoder().decode(SECRET_A)), Jwts.SIG.HS256).compact();
         assertThrows(BusinessException.class, () -> at(SECRET_A, T0).verify(token));
     }
 
@@ -110,5 +113,55 @@ class JwtServiceTest {
         assertThrows(IllegalStateException.class, () -> new JwtService(props(null), c));
         assertThrows(IllegalStateException.class, () -> new JwtService(props("not-base64!!"), c));
         assertThrows(IllegalStateException.class, () -> new JwtService(props(b64("short")), c));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"missingTimes", "futureIat", "longLifetime", "fractionalId", "overflowId",
+            "badUsername", "numericUsername", "badSubject", "missingName", "missingId", "noSignature"})
+    void rejectsInvalidClaims(String scenario) {
+        var builder = Jwts.builder().issuer("xiaoke-mall").subject("1")
+                .claim("userId", 1L).claim("username", "kevin");
+        if (!scenario.equals("missingTimes")) {
+            builder.issuedAt(Date.from(scenario.equals("futureIat") ? T0.plusSeconds(60) : T0))
+                    .expiration(Date.from(T0.plusSeconds(scenario.equals("longLifetime") ? 86400 : 7200)));
+        }
+        switch (scenario) {
+            case "fractionalId" -> builder.claim("userId", 1.5);
+            case "overflowId" -> builder.claim("userId", new java.math.BigInteger("9223372036854775808"));
+            case "badUsername" -> builder.claim("username", "!!!");
+            case "numericUsername" -> builder.claim("username", 1234);
+            case "badSubject" -> builder.subject("2");
+            case "missingName" -> builder.claim("username", null);
+            case "missingId" -> builder.claim("userId", null);
+        }
+        String token = scenario.equals("noSignature") ? builder.compact()
+                : builder.signWith(Keys.hmacShaKeyFor(Base64.getDecoder().decode(SECRET_A)), Jwts.SIG.HS256).compact();
+        BusinessException ex = assertThrows(BusinessException.class, () -> at(SECRET_A, T0).verify(token));
+        assertEquals(401, ex.getCode());
+    }
+
+    @Test
+    void rejectsAtExactExpiryAndOtherHmacAlgorithms() {
+        String token = at(SECRET_A, T0).issue(1L, "kevin");
+        assertEquals(401, assertThrows(BusinessException.class,
+                () -> at(SECRET_A, T0.plusSeconds(7200)).verify(token)).getCode());
+        String longSecret = b64("0123456789abcdef".repeat(4));
+        String hs384 = Jwts.builder().issuer("xiaoke-mall").subject("1")
+                .claim("userId", 1L).claim("username", "kevin").issuedAt(Date.from(T0))
+                .expiration(Date.from(T0.plusSeconds(7200)))
+                .signWith(Keys.hmacShaKeyFor(Base64.getDecoder().decode(longSecret)), Jwts.SIG.HS384).compact();
+        assertEquals(401, assertThrows(BusinessException.class, () -> at(longSecret, T0).verify(hs384)).getCode());
+    }
+
+    @Test
+    void rejectsInvalidConfigurationAndIdentityAtIssuance() {
+        var invalid = props(SECRET_A);
+        invalid.setExpirySeconds(3600);
+        assertThrows(IllegalStateException.class, () -> new JwtService(invalid, Clock.fixed(T0, ZoneOffset.UTC)));
+        invalid.setExpirySeconds(7200);
+        invalid.setIssuer("different");
+        assertThrows(IllegalStateException.class, () -> new JwtService(invalid, Clock.fixed(T0, ZoneOffset.UTC)));
+        assertThrows(IllegalArgumentException.class, () -> at(SECRET_A, T0).issue(0L, "kevin"));
+        assertThrows(IllegalArgumentException.class, () -> at(SECRET_A, T0).issue(1L, "KEVIN"));
     }
 }

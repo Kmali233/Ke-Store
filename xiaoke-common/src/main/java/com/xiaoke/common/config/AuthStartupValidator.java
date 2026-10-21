@@ -2,6 +2,7 @@ package com.xiaoke.common.config;
 
 import com.xiaoke.common.auth.JwtService;
 import com.xiaoke.common.auth.LoginRequired;
+import com.xiaoke.common.auth.LocalAdminInterceptor;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.SmartInitializingSingleton;
 import org.springframework.core.annotation.AnnotatedElementUtils;
@@ -13,7 +14,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 启动期一致性校验。
+ * 启动期一致性校验,自动检查认证配置是否遗漏或冲突
  *
  * 声明了 @LoginRequired 却没启用 JWT，说明漏配了 xiaoke.jwt.enabled / secret-base64。
  * 放任启动的话，拦截器不会注册、身份永远取不到，那些接口会在运行时稳定返回 401，
@@ -46,13 +47,15 @@ public class AuthStartupValidator implements SmartInitializingSingleton {
      * 判定逻辑抽成纯函数：不依赖 Spring 上下文，可以直接单测三个分支。
      */
     static void validate(boolean jwtEnabled, Iterable<HandlerMethod> handlers) {
-        if (jwtEnabled) {
-            return;
-        }
         List<String> violations = new ArrayList<>();
         for (HandlerMethod handler : handlers) {
-            if (AnnotatedElementUtils.hasAnnotation(handler.getMethod(), LoginRequired.class)
-                    || AnnotatedElementUtils.hasAnnotation(handler.getBeanType(), LoginRequired.class)) {
+            boolean login = AnnotatedElementUtils.hasAnnotation(handler.getMethod(), LoginRequired.class)
+                    || AnnotatedElementUtils.hasAnnotation(handler.getBeanType(), LoginRequired.class);
+            if (login && LocalAdminInterceptor.isAdmin(handler)) {
+                throw new IllegalStateException("接口不能同时声明 LoginRequired 与 LocalAdminOnly: "
+                        + handler.getBeanType().getSimpleName() + "#" + handler.getMethod().getName());
+            }
+            if (login && !jwtEnabled) {
                 violations.add(handler.getBeanType().getSimpleName() + "#" + handler.getMethod().getName());
             }
         }

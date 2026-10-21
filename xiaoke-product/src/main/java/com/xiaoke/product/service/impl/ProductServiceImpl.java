@@ -24,11 +24,15 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, Product> impl
 
     @Override
     public IPage<ProductVO> pageProducts(ProductQueryDTO query) {
+        query.validatePage();
         Page<Product> page = new Page<>(query.getPageNum(), query.getPageSize());
         LambdaQueryWrapper<Product> wrapper = new LambdaQueryWrapper<Product>()
+                /** 有商品名称就按名称模糊查询；有分类 ID 就筛选分类；按创建时间倒序 */
                 .like(StringUtils.isNotBlank(query.getName()), Product::getName, query.getName())
                 .eq(query.getCategoryId() != null, Product::getCategoryId, query.getCategoryId())
                 .orderByDesc(Product::getCreateTime);
+
+        // 中间省略了查询条件的构建，交由已注册的分页插件会参与处理 MybatisPlusConfig
         return this.page(page, wrapper).convert(this::toVO);
     }
 

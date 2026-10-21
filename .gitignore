@@ -22,3 +22,9 @@ target/
 .env.local
 .env.*.local
 
+# Local generated documents and verification artifacts
+/output/
+/outputs/
+/project-engineering-file.md
+/apifox-product.json
+

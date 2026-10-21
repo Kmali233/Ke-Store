@@ -30,6 +30,7 @@ public final class UserContext {
         return principal;
     }
 
+    /** 读取用户 ID */
     public static Long requireUserId() {
         return requirePrincipal().userId();
     }
