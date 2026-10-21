@@ -15,7 +15,11 @@ public class MybatisPlusConfig {
     @Bean
     public MybatisPlusInterceptor mybatisPlusInterceptor() {
         MybatisPlusInterceptor interceptor = new MybatisPlusInterceptor();
-        interceptor.addInnerInterceptor(new PaginationInnerInterceptor(DbType.MYSQL));
+        PaginationInnerInterceptor pagination = new PaginationInnerInterceptor(DbType.MYSQL);
+        pagination.setMaxLimit(100L);
+        pagination.setOverflow(false);
+        /** 给 MyBatis-Plus 安装一个分页处理插件，以后执行查询时，由框架按需使用它。 */
+        interceptor.addInnerInterceptor(pagination);
         return interceptor;
     }
 }

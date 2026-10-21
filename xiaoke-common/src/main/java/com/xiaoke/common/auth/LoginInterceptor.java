@@ -33,21 +33,34 @@ public class LoginInterceptor implements HandlerInterceptor {
      */
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
+        // 清理当前线程中可能残留的身份
+        UserContext.clear();
+
+        // 判断目标接口是否需要登录
         if (!requiresLogin(handler)) {
             // 公开接口连 Authorization 都不读：带一个过期 token 也不该被阻断
-            return true;
+            return true;   // 不需要登录，直接放行
         }
+
+        // 从请求头读取 JWT
         String raw = request.getHeader(HEADER_AUTHORIZATION);
+
+        // 没带 JWT，抛出 401 业务异常
         if (raw == null || raw.isBlank()) {
             throw new BusinessException(ResultCode.UNAUTHORIZED);
         }
+
         try {
+            // 验证 JWT，成功后保存身份到 UserContext
             UserContext.set(jwtService.verify(raw));
         } catch (BusinessException e) {
             // 认证失败立即清空，不留半初始化状态
             UserContext.clear();
+            // 验证失败，继续把异常向外抛
             throw e;
         }
+
+        // 本拦截器校验通过，继续后续处理
         return true;
     }
 
@@ -62,12 +75,29 @@ public class LoginInterceptor implements HandlerInterceptor {
         UserContext.clear();
     }
 
-    /** 类上有注解、方法上没有，仍然受保护 */
+    // 读取注解
+
+    /**
+     *
+     * @param handler
+     * @return handler 表示 Spring 已经选中的处理目标。
+     * 拦截器正是通过它，知道“这次要执行哪个方法、方法属于哪个类”。
+     */
     private boolean requiresLogin(Object handler) {
         if (!(handler instanceof HandlerMethod handlerMethod)) {
             return false;
         }
-        return AnnotatedElementUtils.hasAnnotation(handlerMethod.getMethod(), LoginRequired.class)
-                || AnnotatedElementUtils.hasAnnotation(handlerMethod.getBeanType(), LoginRequired.class);
+
+        /**
+        方法上有 @LoginRequired
+          或者
+        方法所属的 Controller 类上有 @LoginRequired
+          ↓
+        需要验证 JWT
+         */
+        return AnnotatedElementUtils.hasAnnotation(
+                handlerMethod.getMethod(), LoginRequired.class)
+                || AnnotatedElementUtils.hasAnnotation(
+                        handlerMethod.getBeanType(), LoginRequired.class);
     }
 }

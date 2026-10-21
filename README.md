@@ -182,8 +182,8 @@ xiaoke-mall/                          # 父工程 (packaging=pom)：聚合子模
 
 ## 六、快速开始
 
-1. 创建数据库：执行 `sql/xiaoke_mall.sql`
-2. 修改数据源：`xiaoke-product/src/main/resources/application-dev.yml` 中的账号密码
+1. 首次准备空库时检查 `sql/xiaoke_mall.sql` 后执行；已有数据库不要重跑，该脚本包含 DROP TABLE，会清除现有数据。
+2. 在 IDEA Run Configuration 的环境变量或启动进程环境中显式设置 `DB_USERNAME`、`DB_PASSWORD`；可选 `DB_HOST`、`DB_PORT`、`DB_NAME`。dev/prod 均不提供默认账号口令，根目录 `.env` 不会被自动加载。
 3. 启动商品服务：运行 `ProductApplication`，端口 `8081`，统一前缀 `/api`
 4. 示例接口（商品）：
 
@@ -196,6 +196,8 @@ xiaoke-mall/                          # 父工程 (packaging=pom)：聚合子模
    | 删除 | `DELETE /api/product/{id}` |
 
 **多服务启动**
+
+2026-10-18：common 本地开发基础设施已完成。商品 GET 公开；三个商品写接口默认返回403。仅本机开发需要写操作时，显式设置 `LOCAL_ADMIN_KEY` 并开启 `xiaoke.local-admin-enabled=true`，请求携带 `X-Local-Admin-Key`。门禁还要求 dev 且未激活 prod、监听与直接来源均为 IPv4 `127.0.0.1`。未来新增管理接口同样必须标注 `@LocalAdminOnly`。
 
 - **IDEA**：Reload 父工程后，每个服务的 `*Application` 各生成一条运行配置，可分别或同时启动。
 - **命令行**：单服务启动 `mvn -pl xiaoke-product spring-boot:run`；全部构建 `mvn clean install`；jar 启动 `java -jar xiaoke-product/target/xiaoke-product-1.0.0.jar`。

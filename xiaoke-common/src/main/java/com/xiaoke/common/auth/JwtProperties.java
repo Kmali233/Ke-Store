@@ -1,13 +1,15 @@
 package com.xiaoke.common.auth;
 
-import lombok.Data;
+import lombok.Getter;
+import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
 /**
  * JWT 配置，属性路径固定为 xiaoke.jwt.*
  */
-@Data
+@Getter
+@Setter
 @Component
 @ConfigurationProperties(prefix = "xiaoke.jwt")
 public class JwtProperties {

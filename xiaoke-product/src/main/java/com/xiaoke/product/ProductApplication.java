@@ -11,11 +11,11 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
  * 全局异常处理、跨域/分页等通用配置在本服务生效；
  * MapperScan 用通配符匹配各服务自己的 mapper 包，新增服务无需改动。
  */
-@SpringBootApplication(scanBasePackages = "com.xiaoke")
+@SpringBootApplication(scanBasePackages = "com.xiaoke")    // 显式读取配置类
 @MapperScan("com.xiaoke.**.mapper")
 public class ProductApplication {
 
     public static void main(String[] args) {
-        SpringApplication.run(ProductApplication.class, args);
+        SpringApplication.run(ProductApplication.class, args);   // 自动创建容器
     }
 }
