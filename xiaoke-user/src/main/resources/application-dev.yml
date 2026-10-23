@@ -1,0 +1,8 @@
+# 本地默认使用 dev。账号、密码通过 IDEA 或进程环境变量提供。
+# Spring Boot 不会自动读取项目根目录的 .env 文件。
+spring:
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://${DB_HOST:127.0.0.1}:${DB_PORT:3306}/${DB_NAME:xiaoke_mall}?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
