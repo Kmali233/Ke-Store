@@ -1,0 +1,39 @@
+server:
+  address: 127.0.0.1
+  port: 8083
+  servlet:
+    context-path: /api
+
+spring:
+  application:
+    name: xiaoke-user
+  profiles:
+    default: dev
+
+mybatis-plus:
+  mapper-locations: classpath*:/mapper/**/*.xml
+  type-aliases-package: com.xiaoke.user.entity
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl
+  global-config:
+    banner: false
+    db-config:
+      id-type: auto
+      logic-delete-field: deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+
+xiaoke:
+  jwt:
+    enabled: true
+    secret-base64: ${XIAOKE_JWT_SECRET_BASE64}
+    issuer: xiaoke-mall
+    expiry-seconds: 7200
+  web:
+    allowed-origins: []
+    max-request-body-bytes: 1048576
+
+logging:
+  pattern:
+    level: "%5p [traceId:%X{traceId}]"

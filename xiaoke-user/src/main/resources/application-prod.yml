@@ -1,0 +1,7 @@
+# 显式指定 prod 时必须提供生产数据库配置，禁止回退到本地开发库。
+spring:
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}

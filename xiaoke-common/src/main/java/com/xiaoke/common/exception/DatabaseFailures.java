@@ -49,15 +49,26 @@ public final class DatabaseFailures {
      */
     public static <T> T execute(TransactionOperations transaction, Supplier<T> action) {
         int[] completion = {TransactionSynchronization.STATUS_UNKNOWN};
+        boolean[] observed = {false};
+        boolean[] actionCompleted = {false};
         try {
             return transaction.execute(status -> {
                 TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                     @Override
                     public void afterCompletion(int state) { completion[0] = state; }
                 });
-                return action.get();
+                observed[0] = true;
+                T value = action.get();
+                actionCompleted[0] = true;
+                return value;
             });
         } catch (RuntimeException failure) {
+            // 业务动作返回后的异常属于提交/完成阶段；部分管理器还会再次尝试 rollback。
+            // 即使收到回滚回调，也不能证明提交一定没发生，需保留“结果待核对”语义。
+            if (observed[0] && (actionCompleted[0] || completion[0] == TransactionSynchronization.STATUS_UNKNOWN)
+                    && !outcomeUnknown(failure)) {
+                throw new TransactionSystemException("Transaction outcome unknown", failure);
+            }
             if (completion[0] == TransactionSynchronization.STATUS_ROLLED_BACK
                     && !outcomeUnknown(failure) && lockConflict(failure)) {
                 throw new BusinessException(409, "数据状态冲突");

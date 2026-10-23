@@ -166,7 +166,7 @@ xiaoke-mall/                          # 父工程 (packaging=pom)：聚合子模
 │       ├── exception                 # BusinessException、GlobalExceptionHandler
 │       └── config                    # CorsConfig(跨域)、MybatisPlusConfig(分页)
 ├── xiaoke-product/                   # 商品服务（可独立启动，端口 8081）✅ 已有
-├── xiaoke-user/                      # 用户服务（端口 8083）            ⏳ M1
+├── xiaoke-user/                      # 用户服务（端口 8083）✅ 注册、登录、me、地址五接口
 ├── xiaoke-order/                     # 订单服务（端口 8082）            ⏳ M2
 ├── xiaoke-ai/                        # AI 客服 BFF（端口 8084）         ⏳ M3
 ├── sql/xiaoke_mall.sql               # 建库建表脚本
@@ -174,7 +174,7 @@ xiaoke-mall/                          # 父工程 (packaging=pom)：聚合子模
 └── docs/                             # 规范化文档集（8 篇，见下）
 ```
 
-> **关键约定**：所有服务启动类统一 `@SpringBootApplication(scanBasePackages = "com.xiaoke")` + `@MapperScan("com.xiaoke.**.mapper")`，因此 common 中的全局异常处理、跨域/分页配置对所有服务自动生效，新增服务无需额外配置。
+> **组件扫描**：服务需要扫描自身业务和 common。user 使用 `@SpringBootApplication(scanBasePackages = {"com.xiaoke.user", "com.xiaoke.common"})` 与 `@MapperScan("com.xiaoke.user.mapper")`，加载通用组件并限定自身 Mapper。
 >
 > **端口规划**：网关预留 `8080`；业务服务从 `8081` 起（product=8081，order=8082，user=8083，ai=8084…）。
 
@@ -194,6 +194,24 @@ xiaoke-mall/                          # 父工程 (packaging=pom)：聚合子模
    | 新增 | `POST /api/product` |
    | 修改 | `PUT /api/product` |
    | 删除 | `DELETE /api/product/{id}` |
+
+**用户服务（2026-10-22 已实现）**
+
+配置上述数据库环境变量，并提供 `XIAOKE_JWT_SECRET_BASE64`（密码学随机的至少 32 字节经 Base64 编码）。运行 `UserApplication`，或从根目录执行 `mvn -B -ntp -pl xiaoke-user -am package` 后执行 `java -jar xiaoke-user/target/xiaoke-user-1.0.0.jar`。
+
+| 操作 | 接口 |
+|---|---|
+| 注册 / 登录 | `POST /api/user/register`、`POST /api/user/login` |
+| 当前用户 | `GET /api/user/me` |
+| 地址新增 / 列表 | `POST /api/address`、`GET /api/address/list` |
+| 地址修改 / 删除 | `PUT /api/address`、`DELETE /api/address/{id}` |
+| 默认地址 | `PUT /api/address/{id}/default` |
+
+注册和登录公开；其余接口使用 `Authorization: <原始JWT>`，没有 Bearer 前缀。第一条地址省略 isDefault 时自动默认，显式 false 会被尊重，删除默认地址不自动转移。生产环境显式激活 prod 并提供 `DB_URL`、`DB_USERNAME`、`DB_PASSWORD` 和 JWT 密钥。
+
+从 [UserController.register](xiaoke-user/src/main/java/com/xiaoke/user/controller/UserController.java) 开始阅读，再追踪 DTO → UserServiceImpl → 密码配置 → 注册事务组件 → Mapper。用户写事务最终统一使用 UserTransactions/TransactionTemplate，在确认回滚后转换锁冲突；不要给外层业务再套事务。
+
+测试从根目录运行 `mvn -B -ntp package`。真实 MySQL 集成测试仅在 `XIAOKE_USER_DB_TESTS=true` 且提供 `XIAOKE_USER_TEST_DB_URL` 时启用，测试库名必须匹配 `xiaoke_user_verify_*`；测试会清空其用户和地址数据，使用专用隔离实例。默认跳过该组，不代表数据库测试已经通过。
 
 **多服务启动**
 
