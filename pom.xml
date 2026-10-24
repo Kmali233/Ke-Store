@@ -23,6 +23,7 @@
         <module>xiaoke-common</module>
         <module>xiaoke-product</module>
         <module>xiaoke-user</module>
+        <module>xiaoke-order</module>
     </modules>
 
     <!--    项目属性：新增属性时在此追加    -->

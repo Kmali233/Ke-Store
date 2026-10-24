@@ -167,7 +167,7 @@ xiaoke-mall/                          # 父工程 (packaging=pom)：聚合子模
 │       └── config                    # CorsConfig(跨域)、MybatisPlusConfig(分页)
 ├── xiaoke-product/                   # 商品服务（端口 8081）✅ 商品、搜索、分类、参数共12接口
 ├── xiaoke-user/                      # 用户服务（端口 8083）✅ 注册、登录、me、地址五接口
-├── xiaoke-order/                     # 订单服务（端口 8082）            ⏳ M2
+├── xiaoke-order/                     # 订单服务（端口 8082）✅ 创建、查询、模拟支付、发货、取消七接口
 ├── xiaoke-ai/                        # AI 客服 BFF（端口 8084）         ⏳ M3
 ├── sql/xiaoke_mall.sql               # 建库建表脚本
 ├── frontend/                         # 前端静态页（小米商城风格，71 张图）
@@ -219,6 +219,16 @@ xiaoke-mall/                          # 父工程 (packaging=pom)：聚合子模
 
 测试从根目录运行 `mvn -B -ntp package`。真实 MySQL 集成测试仅在 `XIAOKE_USER_DB_TESTS=true` 且提供 `XIAOKE_USER_TEST_DB_URL` 时启用，测试库名必须匹配 `xiaoke_user_verify_*`；测试会清空其用户和地址数据，使用专用隔离实例。默认跳过该组，不代表数据库测试已经通过。
 
+**订单服务（2026-10-24）**
+
+订单服务使用与user相同的数据库和 `XIAOKE_JWT_SECRET_BASE64`，启动 `OrderApplication` 或构建后运行 `java -jar xiaoke-order/target/xiaoke-order-1.0.0.jar`，端口8082。创建订单前启动product，`PRODUCT_BASE_URL` 在dev默认 `http://127.0.0.1:8081/api`，prod必须显式配置。
+
+七接口为 `POST /api/order`、`GET /api/order/page`、`GET /api/order/{orderNo}`、`GET /api/order/{orderNo}/status`、`POST /api/order/{orderNo}/pay`、`POST /api/order/{orderNo}/ship`、`POST /api/order/{orderNo}/cancel`。六个买家接口使用原始JWT；ship使用本地管理门禁。完整契约、收货二选一、库存事务和阅读顺序见 [xiaoke-order/README.md](xiaoke-order/README.md)。
+
+订单快照、库存扣减/恢复和下单件数使用同库事务；order通过自有适配Mapper访问关联表，不依赖user/product业务jar。创建没有请求幂等，模拟支付/取消不涉及真实资金。
+
+真实订单数据库测试需要 `XIAOKE_ORDER_DB_TESTS=true` 和 `XIAOKE_ORDER_TEST_DB_URL`，仅允许专用 `xiaoke_order_verify_*` 库。测试会清空该库并注入故障，默认跳过。当前机器的完整复现入口为 `output/run-order-verification.py`。
+
 **多服务启动**
 
 2026-10-23：商品模块五个 GET 公开，七个管理写接口默认返回403。仅本机开发需要写操作时，显式设置 `SPRING_PROFILES_ACTIVE=dev`、`LOCAL_ADMIN_KEY` 并开启 `xiaoke.local-admin-enabled=true`（环境变量 `XIAOKE_LOCAL_ADMIN_ENABLED=true`），请求携带 `X-Local-Admin-Key`。门禁还要求未激活 prod、监听与直接来源均为 IPv4 `127.0.0.1`。未来新增管理接口同样必须标注 `@LocalAdminOnly`。
@@ -226,14 +236,9 @@ xiaoke-mall/                          # 父工程 (packaging=pom)：聚合子模
 - **IDEA**：Reload 父工程后，每个服务的 `*Application` 各生成一条运行配置，可分别或同时启动。
 - **命令行**：单服务启动 `mvn -pl xiaoke-product spring-boot:run`；全部构建 `mvn clean install`；jar 启动 `java -jar xiaoke-product/target/xiaoke-product-1.0.0.jar`。
 
-**新增一个服务（以 order 为例）**
+**新增后续服务**
 
-1. 复制 `xiaoke-product` 目录 → 重命名 `xiaoke-order`
-2. 改 `artifactId` 为 `xiaoke-order`
-3. 包名 `com.xiaoke.product` → `com.xiaoke.order`，启动类改名 `OrderApplication`
-4. 改 `application.yml`：`server.port` → `8082`，`spring.application.name` → `xiaoke-order`
-5. 父工程 `pom.xml` 的 `<modules>` 追加 `<module>xiaoke-order</module>`
-6. 启动 `OrderApplication`
+只复用已有服务的POM、配置和启动骨架，为新服务建立自己的包、Mapper和业务代码，并加入父POM聚合。order已经建立，不需要再次复制商品服务。
 
 ---
 
@@ -246,7 +251,7 @@ xiaoke-mall/                          # 父工程 (packaging=pom)：聚合子模
 | **M0** 规范与环境 | 文档集、端口规划、密钥外置、中间件编排 | 进行中 |
 | **M1** 用户服务 | 注册、登录、身份与地址八接口 | 已实现并验证 |
 | **商品目录** | 商品、分类、参数十二接口 | 已实现；验收见商品模块说明 |
-| **M2** 订单服务 | 有真实订单数据可查，接口满足工具回查 | 待开始 |
+| **M2** 订单服务 | 订单七接口、快照、同库库存和下单件数联动 | 已实现；验收见订单模块说明 |
 | **M3** AI 客服链路打通 | 跑通「提问 → 查真实订单 → 流式回答」闭环 | 待开始 |
 | **M4** 前端助手与评测 | 悬浮组件 + 60–100 条评测集 + 基线报告 | 待开始 |
 | **M5** 打磨 | 可观测、成本控制、网关、语料完善 | 待开始 |
