@@ -165,7 +165,7 @@ xiaoke-mall/                          # 父工程 (packaging=pom)：聚合子模
 │       ├── result                    # Result 统一返回、ResultCode 状态码
 │       ├── exception                 # BusinessException、GlobalExceptionHandler
 │       └── config                    # CorsConfig(跨域)、MybatisPlusConfig(分页)
-├── xiaoke-product/                   # 商品服务（可独立启动，端口 8081）✅ 已有
+├── xiaoke-product/                   # 商品服务（端口 8081）✅ 商品、搜索、分类、参数共12接口
 ├── xiaoke-user/                      # 用户服务（端口 8083）✅ 注册、登录、me、地址五接口
 ├── xiaoke-order/                     # 订单服务（端口 8082）            ⏳ M2
 ├── xiaoke-ai/                        # AI 客服 BFF（端口 8084）         ⏳ M3
@@ -183,7 +183,7 @@ xiaoke-mall/                          # 父工程 (packaging=pom)：聚合子模
 ## 六、快速开始
 
 1. 首次准备空库时检查 `sql/xiaoke_mall.sql` 后执行；已有数据库不要重跑，该脚本包含 DROP TABLE，会清除现有数据。
-2. 在 IDEA Run Configuration 的环境变量或启动进程环境中显式设置 `DB_USERNAME`、`DB_PASSWORD`；可选 `DB_HOST`、`DB_PORT`、`DB_NAME`。dev/prod 均不提供默认账号口令，根目录 `.env` 不会被自动加载。
+2. 在 IDEA Run Configuration 的环境变量或启动进程环境中显式设置 `DB_USERNAME`、`DB_PASSWORD`；dev 可选 `DB_HOST`、`DB_PORT`、`DB_NAME`，prod 提供完整 `DB_URL`。均不提供默认账号口令，根目录 `.env` 不会被自动加载。
 3. 启动商品服务：运行 `ProductApplication`，端口 `8081`，统一前缀 `/api`
 4. 示例接口（商品）：
 
@@ -194,6 +194,12 @@ xiaoke-mall/                          # 父工程 (packaging=pom)：聚合子模
    | 新增 | `POST /api/product` |
    | 修改 | `PUT /api/product` |
    | 删除 | `DELETE /api/product/{id}` |
+   | 搜索 | `GET /api/product/search?keyword=手机` |
+   | 参数读取 / 覆盖 | `GET /api/product/{id}/attrs`、`POST /api/product/{id}/attrs` |
+   | 分类列表 / 新增 | `GET /api/category/list`、`POST /api/category` |
+   | 分类修改 / 删除 | `PUT /api/category`、`DELETE /api/category/{id}` |
+
+商品模块当前契约与阅读顺序见 [xiaoke-product/README.md](xiaoke-product/README.md)。公开查询只展示上架且分类祖先均可见的商品。商品资料 PUT 中的库存只用于核对，不能覆盖库存；对外 `orderCount` 映射既有 `sales` 列，表示已创建且未取消的下单件数。
 
 **用户服务（2026-10-22 已实现）**
 
@@ -215,7 +221,7 @@ xiaoke-mall/                          # 父工程 (packaging=pom)：聚合子模
 
 **多服务启动**
 
-2026-10-18：common 本地开发基础设施已完成。商品 GET 公开；三个商品写接口默认返回403。仅本机开发需要写操作时，显式设置 `LOCAL_ADMIN_KEY` 并开启 `xiaoke.local-admin-enabled=true`，请求携带 `X-Local-Admin-Key`。门禁还要求 dev 且未激活 prod、监听与直接来源均为 IPv4 `127.0.0.1`。未来新增管理接口同样必须标注 `@LocalAdminOnly`。
+2026-10-23：商品模块五个 GET 公开，七个管理写接口默认返回403。仅本机开发需要写操作时，显式设置 `SPRING_PROFILES_ACTIVE=dev`、`LOCAL_ADMIN_KEY` 并开启 `xiaoke.local-admin-enabled=true`（环境变量 `XIAOKE_LOCAL_ADMIN_ENABLED=true`），请求携带 `X-Local-Admin-Key`。门禁还要求未激活 prod、监听与直接来源均为 IPv4 `127.0.0.1`。未来新增管理接口同样必须标注 `@LocalAdminOnly`。
 
 - **IDEA**：Reload 父工程后，每个服务的 `*Application` 各生成一条运行配置，可分别或同时启动。
 - **命令行**：单服务启动 `mvn -pl xiaoke-product spring-boot:run`；全部构建 `mvn clean install`；jar 启动 `java -jar xiaoke-product/target/xiaoke-product-1.0.0.jar`。
@@ -238,7 +244,8 @@ xiaoke-mall/                          # 父工程 (packaging=pom)：聚合子模
 | 里程碑 | 目标 | 状态 |
 |---|---|---|
 | **M0** 规范与环境 | 文档集、端口规划、密钥外置、中间件编排 | 进行中 |
-| **M1** 用户服务 | 能注册、能登录、能识别身份 | 待开始 |
+| **M1** 用户服务 | 注册、登录、身份与地址八接口 | 已实现并验证 |
+| **商品目录** | 商品、分类、参数十二接口 | 已实现；验收见商品模块说明 |
 | **M2** 订单服务 | 有真实订单数据可查，接口满足工具回查 | 待开始 |
 | **M3** AI 客服链路打通 | 跑通「提问 → 查真实订单 → 流式回答」闭环 | 待开始 |
 | **M4** 前端助手与评测 | 悬浮组件 + 60–100 条评测集 + 基线报告 | 待开始 |

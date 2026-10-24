@@ -9,7 +9,7 @@ spring:
   application:
     name: xiaoke-product
   profiles:
-    active: dev
+    default: dev
 
 mybatis-plus:
   mapper-locations: classpath*:/mapper/**/*.xml
@@ -26,6 +26,8 @@ mybatis-plus:
       logic-not-delete-value: 0
 
 xiaoke:
+  jwt:
+    enabled: false
   local-admin-enabled: false
   local-admin-key: ${LOCAL_ADMIN_KEY:}
   web:

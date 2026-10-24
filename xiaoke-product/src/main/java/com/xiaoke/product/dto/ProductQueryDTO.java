@@ -20,4 +20,8 @@ public class ProductQueryDTO extends PageQuery {
     /** 分类ID */
     @Positive
     private Long categoryId;
+
+    public void setName(String value) {
+        name = value == null || value.trim().isEmpty() ? null : value.trim();
+    }
 }

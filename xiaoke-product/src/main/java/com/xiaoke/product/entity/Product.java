@@ -3,6 +3,8 @@ package com.xiaoke.product.entity;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.baomidou.mybatisplus.annotation.TableField;
+import com.baomidou.mybatisplus.annotation.TableLogic;
 import lombok.Data;
 
 import java.math.BigDecimal;
@@ -30,6 +32,10 @@ public class Product {
     /** 库存 */
     private Integer stock;
 
+    /** 已创建且未取消的下单件数，数据库仍使用 sales 列。 */
+    @TableField("sales")
+    private Integer orderCount;
+
     /** 商品图片 */
     private String image;
 
@@ -44,5 +50,6 @@ public class Product {
     private LocalDateTime updateTime;
 
     /** 逻辑删除：0未删 1已删 */
+    @TableLogic
     private Integer deleted;
 }
