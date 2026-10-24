@@ -1,71 +1,164 @@
 package com.xiaoke.product.service.impl;
 
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
-import com.baomidou.mybatisplus.core.toolkit.StringUtils;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.xiaoke.common.exception.BusinessException;
+import com.xiaoke.product.enums.CatalogStatus;
 import com.xiaoke.common.result.ResultCode;
-import com.xiaoke.product.dto.ProductDTO;
-import com.xiaoke.product.dto.ProductQueryDTO;
+import com.xiaoke.common.web.PageQuery;
+import com.xiaoke.product.dto.*;
 import com.xiaoke.product.entity.Product;
-import com.xiaoke.product.mapper.ProductMapper;
-import com.xiaoke.product.service.ProductService;
-import com.xiaoke.product.vo.ProductVO;
+import com.xiaoke.product.mapper.*;
+import com.xiaoke.product.service.*;
+import com.xiaoke.product.vo.*;
+import lombok.RequiredArgsConstructor;
 import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Service;
+import java.util.*;
+import static com.xiaoke.product.service.CatalogValidation.oneRow;
 
-/**
- * 商品 Service 实现
- */
 @Service
-public class ProductServiceImpl extends ServiceImpl<ProductMapper, Product> implements ProductService {
+@RequiredArgsConstructor
+public class ProductServiceImpl implements ProductService {
+    private final ProductMapper products;
+    private final CategoryMapper categories;
+    private final ProductAttrMapper attrs;
+    private final CategoryChainPolicy chains;
+    private final CatalogTransactions transactions;
+    private final CatalogValidation validation;
 
     @Override
     public IPage<ProductVO> pageProducts(ProductQueryDTO query) {
+        validation.check(query);
         query.validatePage();
-        Page<Product> page = new Page<>(query.getPageNum(), query.getPageSize());
-        LambdaQueryWrapper<Product> wrapper = new LambdaQueryWrapper<Product>()
-                /** 有商品名称就按名称模糊查询；有分类 ID 就筛选分类；按创建时间倒序 */
-                .like(StringUtils.isNotBlank(query.getName()), Product::getName, query.getName())
-                .eq(query.getCategoryId() != null, Product::getCategoryId, query.getCategoryId())
-                .orderByDesc(Product::getCreateTime);
-
-        // 中间省略了查询条件的构建，交由已注册的分页插件会参与处理 MybatisPlusConfig
-        return this.page(page, wrapper).convert(this::toVO);
+        return page(query, query.getCategoryId(), query.getName());
     }
 
     @Override
-    public ProductVO getProductById(Long id) {
-        Product product = this.getById(id);
-        if (product == null) {
-            throw new BusinessException(ResultCode.NOT_FOUND);
+    public IPage<ProductVO> searchProducts(ProductSearchDTO query) {
+        validation.check(query);
+        query.validatePage();
+        return page(query, null, query.getKeyword());
+    }
+
+    private IPage<ProductVO> page(PageQuery query, Long categoryId, String term) {
+        return transactions.read(() -> {
+            Set<Long> visible = chains.visibleIds(categories.listActive());
+            String pattern = literalPattern(term);
+            long total = products.countVisible(visible, categoryId, pattern);
+            Page<ProductVO> page = new Page<>(query.getPageNum(), query.getPageSize(), total);
+            long offset = Math.multiplyExact(query.getPageNum() - 1, query.getPageSize());
+            page.setRecords(offset >= total ? List.of() : products.listVisible(visible, categoryId, pattern, offset, query.getPageSize())
+                    .stream().map(this::toVO).toList());
+            return page;
+        });
+    }
+
+    @Override
+    public ProductDetailVO getProductById(Long id) {
+        validation.id(id);
+        // 商品、分类和参数在同一 RR 快照内读取，不会读到参数覆盖的中间状态。
+        return transactions.read(() -> {
+            Product product = requireActive(products.findIncludingDeleted(id));
+            Set<Long> visible = chains.visibleIds(categories.listActive());
+            if (!CatalogStatus.ENABLED.matches(product.getStatus())
+                    || (product.getCategoryId() != null && !visible.contains(product.getCategoryId()))) {
+                throw new BusinessException(ResultCode.NOT_FOUND);
+            }
+            ProductDetailVO detail = new ProductDetailVO();
+            BeanUtils.copyProperties(toVO(product), detail);
+            detail.setAttrs(attrs.selectActiveByProductId(id).stream()
+                    .map(row -> new ProductAttrVO(row.getAttrName(), row.getAttrValue(), row.getAttrGroup(), row.getSort())).toList());
+            return detail;
+        });
+    }
+
+    @Override
+    public void addProduct(ProductCreateDTO dto) {
+        validation.check(dto);
+        transactions.write(() -> {
+            var locked = chains.lockChains(dto.getCategoryId());
+            chains.requireUsable(dto.getCategoryId(), locked, null);
+            Product row = new Product();
+            BeanUtils.copyProperties(dto, row);
+            row.setStatus(dto.getStatus() == null ? CatalogStatus.ENABLED.value() : dto.getStatus());
+            row.setOrderCount(0);
+            row.setDeleted(0);
+            oneRow(products.insert(row));
+            return null;
+        });
+    }
+
+    @Override
+    public void updateProduct(ProductUpdateDTO dto) {
+        validation.check(dto);
+        transactions.write(() -> {
+            Product before = requireActive(products.findIncludingDeleted(dto.getId()));
+            var locked = chains.lockChains(before.getCategoryId(), dto.getCategoryId());
+            Product row = lockStableProduct(before);
+            requireCounters(row);
+            if (dto.getStock() != null && !dto.getStock().equals(row.getStock())) {
+                throw new BusinessException(409, "不允许通过资料更新覆盖库存");
+            }
+            Product updated = new Product();
+            BeanUtils.copyProperties(row, updated);
+            if (dto.getName() != null) { updated.setName(dto.getName()); }
+            if (dto.getCategoryId() != null) { updated.setCategoryId(dto.getCategoryId()); }
+            // 用数值比较，1 与 1.00 应是同一次幂等更新。
+            if (dto.getPrice() != null && dto.getPrice().compareTo(row.getPrice()) != 0) { updated.setPrice(dto.getPrice()); }
+            if (dto.getImage() != null) { updated.setImage(dto.getImage()); }
+            if (dto.getDescription() != null) { updated.setDescription(dto.getDescription()); }
+            if (dto.getStatus() != null) { updated.setStatus(dto.getStatus()); }
+            if (dto.getCategoryId() != null || (CatalogStatus.ENABLED.matches(updated.getStatus()) && !Objects.equals(row.getStatus(), updated.getStatus()))) {
+                chains.requireUsable(updated.getCategoryId(), locked, null);
+            }
+            if (!row.equals(updated)) { oneRow(products.updateEditableFields(updated)); }
+            return null;
+        });
+    }
+
+    @Override
+    public void deleteProduct(Long id) {
+        validation.id(id);
+        transactions.write(() -> {
+            Product before = requireActive(products.findIncludingDeleted(id));
+            chains.lockChains(before.getCategoryId());
+            lockStableProduct(before);
+            oneRow(products.markDeleted(id));
+            attrs.softDeleteByProductId(id);
+            return null;
+        });
+    }
+
+    private Product lockStableProduct(Product before) {
+        Product locked = requireActive(products.lockById(before.getId()));
+        if (!Objects.equals(before.getCategoryId(), locked.getCategoryId())) {
+            // 已持有商品锁，不能继续补取分类锁；整笔回滚后由调用方重新读取。
+            throw new BusinessException(409, "商品分类已变化，请重新读取");
         }
-        return toVO(product);
+        return locked;
     }
 
-    @Override
-    public void addProduct(ProductDTO dto) {
-        Product product = new Product();
-        BeanUtils.copyProperties(dto, product);
-        product.setId(null);
-        this.save(product);
+    private Product requireActive(Product row) {
+        if (row == null || !Integer.valueOf(0).equals(row.getDeleted())) { throw new BusinessException(ResultCode.NOT_FOUND); }
+        return row;
     }
 
-    @Override
-    public void updateProduct(ProductDTO dto) {
-        if (dto.getId() == null) {
-            throw new BusinessException("商品id不能为空");
+    private void requireCounters(Product row) {
+        if (row.getStock() == null || row.getStock() < 0 || row.getOrderCount() == null || row.getOrderCount() < 0) {
+            throw new BusinessException(ResultCode.FAIL);
         }
-        Product product = new Product();
-        BeanUtils.copyProperties(dto, product);
-        this.updateById(product);
     }
 
-    private ProductVO toVO(Product product) {
+    private ProductVO toVO(Product row) {
+        requireCounters(row);
         ProductVO vo = new ProductVO();
-        BeanUtils.copyProperties(product, vo);
+        BeanUtils.copyProperties(row, vo);
         return vo;
+    }
+
+    /** 使用 ! 转义，%/_/! 都按用户输入的字面字符匹配。 */
+    public static String literalPattern(String term) {
+        return term == null ? null : "%" + term.replace("!", "!!").replace("%", "!%").replace("_", "!_") + "%";
     }
 }

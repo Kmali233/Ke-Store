@@ -4,6 +4,7 @@ import com.xiaoke.common.config.JacksonInputConfig;
 import com.xiaoke.common.exception.GlobalExceptionHandler;
 import com.xiaoke.product.controller.ProductController;
 import com.xiaoke.product.service.ProductService;
+import com.xiaoke.product.service.ProductAttrService;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
 import org.springframework.http.converter.json.Jackson2ObjectMapperBuilder;
@@ -21,7 +22,7 @@ class ProductInputContractTest {
         var service = mock(ProductService.class);
         var builder = Jackson2ObjectMapperBuilder.json();
         new JacksonInputConfig().strictJson().customize(builder);
-        var mvc = MockMvcBuilders.standaloneSetup(new ProductController(service))
+        var mvc = MockMvcBuilders.standaloneSetup(new ProductController(service, mock(ProductAttrService.class)))
                 .setMessageConverters(new MappingJackson2HttpMessageConverter(builder.build()))
                 .setControllerAdvice(new GlobalExceptionHandler()).build();
         for (String price : new String[]{"1.234", "100000000", "\"1.20\"", "-1"}) {
@@ -35,7 +36,7 @@ class ProductInputContractTest {
     @Test
     void validMoneyIsPassedToServiceAsExactBigDecimal() throws Exception {
         var service = mock(ProductService.class);
-        var mvc = MockMvcBuilders.standaloneSetup(new ProductController(service)).build();
+        var mvc = MockMvcBuilders.standaloneSetup(new ProductController(service, mock(ProductAttrService.class))).build();
         mvc.perform(post("/product").contentType(MediaType.APPLICATION_JSON)
                         .content("{\"name\":\"test\",\"stock\":1,\"price\":99999999.99}"))
                 .andExpect(status().isOk());
