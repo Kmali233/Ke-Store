@@ -1,0 +1,50 @@
+{
+  "v1_sha256": "aed29b56d6679577c1591194f1eac1228209f5a6b5fbaa284e72734c4b91ece0",
+  "mysql_version": "8.0.34",
+  "structure": {
+    "objects": {
+      "tables": [
+        {
+          "name": "t_address",
+          "kind": "BASE TABLE"
+        },
+        {
+          "name": "t_category",
+          "kind": "BASE TABLE"
+        },
+        {
+          "name": "t_order_item",
+          "kind": "BASE TABLE"
+        },
+        {
+          "name": "t_orders",
+          "kind": "BASE TABLE"
+        },
+        {
+          "name": "t_product",
+          "kind": "BASE TABLE"
+        },
+        {
+          "name": "t_product_attr",
+          "kind": "BASE TABLE"
+        },
+        {
+          "name": "t_user",
+          "kind": "BASE TABLE"
+        }
+      ],
+      "triggers": [],
+      "routines": [],
+      "events": []
+    },
+    "ddl": {
+      "t_address": "CREATE TABLE `t_address` (\n  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '地址ID',\n  `user_id` bigint NOT NULL COMMENT '所属用户ID',\n  `receiver_name` varchar(50) NOT NULL COMMENT '收货人姓名',\n  `receiver_phone` varchar(20) NOT NULL COMMENT '收货人电话',\n  `province` varchar(50) DEFAULT NULL COMMENT '省',\n  `city` varchar(50) DEFAULT NULL COMMENT '市',\n  `district` varchar(50) DEFAULT NULL COMMENT '区/县',\n  `detail_address` varchar(255) NOT NULL COMMENT '详细地址',\n  `is_default` tinyint NOT NULL DEFAULT '0' COMMENT '是否默认：1是 0否',\n  `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',\n  `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',\n  `deleted` tinyint NOT NULL DEFAULT '0' COMMENT '逻辑删除：0未删 1已删',\n  KEY `idx_user_id` (`user_id`),\n  PRIMARY KEY (`id`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='收货地址表'",
+      "t_category": "CREATE TABLE `t_category` (\n  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '分类ID',\n  `name` varchar(50) NOT NULL COMMENT '分类名称',\n  `parent_id` bigint NOT NULL DEFAULT '0' COMMENT '父分类ID，0 表示一级分类',\n  `icon` varchar(255) DEFAULT NULL COMMENT '分类图标',\n  `sort` int NOT NULL DEFAULT '0' COMMENT '排序值，越小越靠前',\n  `status` tinyint NOT NULL DEFAULT '1' COMMENT '状态：1启用 0停用',\n  `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',\n  `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',\n  `deleted` tinyint NOT NULL DEFAULT '0' COMMENT '逻辑删除：0未删 1已删',\n  KEY `idx_parent_id` (`parent_id`),\n  PRIMARY KEY (`id`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='商品分类表'",
+      "t_order_item": "CREATE TABLE `t_order_item` (\n  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '明细ID',\n  `order_id` bigint NOT NULL COMMENT '关联 t_orders.id',\n  `order_no` varchar(32) NOT NULL COMMENT '订单号（冗余，便于查询）',\n  `product_id` bigint NOT NULL COMMENT '商品ID',\n  `product_name` varchar(128) NOT NULL COMMENT '商品名称（快照）',\n  `product_image` varchar(255) DEFAULT NULL COMMENT '商品图片（快照）',\n  `price` decimal(10,2) NOT NULL COMMENT '下单时单价（快照）',\n  `quantity` int NOT NULL DEFAULT '1' COMMENT '购买数量',\n  `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',\n  `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',\n  `deleted` tinyint NOT NULL DEFAULT '0' COMMENT '逻辑删除：0未删 1已删',\n  KEY `idx_order_id` (`order_id`),\n  KEY `idx_order_no` (`order_no`),\n  KEY `idx_product_id` (`product_id`),\n  PRIMARY KEY (`id`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='订单明细表'",
+      "t_orders": "CREATE TABLE `t_orders` (\n  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '订单ID',\n  `order_no` varchar(32) NOT NULL COMMENT '业务订单号，对外暴露',\n  `user_id` bigint NOT NULL COMMENT '下单用户ID',\n  `total_amount` decimal(10,2) NOT NULL DEFAULT '0.00' COMMENT '订单总额',\n  `status` tinyint NOT NULL DEFAULT '0' COMMENT '状态：0待付款 1已付款 2备货中 3已发货 4已签收 5已取消',\n  `logistics_company` varchar(50) DEFAULT NULL COMMENT '物流公司',\n  `tracking_no` varchar(64) DEFAULT NULL COMMENT '运单号',\n  `receiver_name` varchar(50) NOT NULL COMMENT '收货人',\n  `receiver_phone` varchar(20) NOT NULL COMMENT '联系电话',\n  `receiver_address` varchar(255) NOT NULL COMMENT '收货地址（下单时快照）',\n  `remark` varchar(255) DEFAULT NULL COMMENT '订单备注',\n  `pay_time` datetime DEFAULT NULL COMMENT '支付时间',\n  `ship_time` datetime DEFAULT NULL COMMENT '发货时间',\n  `finish_time` datetime DEFAULT NULL COMMENT '完成（签收）时间',\n  `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',\n  `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',\n  `deleted` tinyint NOT NULL DEFAULT '0' COMMENT '逻辑删除：0未删 1已删',\n  KEY `idx_create_time` (`create_time`),\n  KEY `idx_status` (`status`),\n  KEY `idx_user_id` (`user_id`),\n  PRIMARY KEY (`id`),\n  UNIQUE KEY `uk_order_no` (`order_no`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='订单主表'",
+      "t_product": "CREATE TABLE `t_product` (\n  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '商品ID',\n  `name` varchar(128) NOT NULL COMMENT '商品名称',\n  `category_id` bigint DEFAULT NULL COMMENT '分类ID',\n  `price` decimal(10,2) NOT NULL DEFAULT '0.00' COMMENT '售价',\n  `stock` int NOT NULL DEFAULT '0' COMMENT '库存',\n  `sales` int NOT NULL DEFAULT '0' COMMENT '下单件数：下单+、取消-（已创建且未取消）',\n  `image` varchar(255) DEFAULT NULL COMMENT '商品主图',\n  `description` text COMMENT '商品描述（可供 AI 引用）',\n  `status` tinyint NOT NULL DEFAULT '1' COMMENT '状态：0下架 1上架',\n  `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',\n  `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',\n  `deleted` tinyint NOT NULL DEFAULT '0' COMMENT '逻辑删除：0未删 1已删',\n  KEY `idx_category_id` (`category_id`),\n  KEY `idx_name` (`name`),\n  KEY `idx_status` (`status`),\n  PRIMARY KEY (`id`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='商品表'",
+      "t_product_attr": "CREATE TABLE `t_product_attr` (\n  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '参数ID',\n  `product_id` bigint NOT NULL COMMENT '所属商品ID',\n  `attr_name` varchar(50) NOT NULL COMMENT '参数名，如 电池容量',\n  `attr_value` varchar(255) NOT NULL COMMENT '参数值，如 5000mAh',\n  `attr_group` varchar(50) DEFAULT NULL COMMENT '参数分组，如 屏幕/性能/续航',\n  `sort` int NOT NULL DEFAULT '0' COMMENT '排序值，越小越靠前',\n  `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',\n  `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',\n  `deleted` tinyint NOT NULL DEFAULT '0' COMMENT '逻辑删除：0未删 1已删',\n  KEY `idx_product_id` (`product_id`),\n  PRIMARY KEY (`id`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='商品参数表'",
+      "t_user": "CREATE TABLE `t_user` (\n  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '用户ID',\n  `username` varchar(50) NOT NULL COMMENT '登录名',\n  `password` varchar(100) NOT NULL COMMENT '密码（BCrypt 密文，禁止明文）',\n  `nickname` varchar(50) DEFAULT NULL COMMENT '昵称',\n  `phone` varchar(20) DEFAULT NULL COMMENT '手机号',\n  `status` tinyint NOT NULL DEFAULT '1' COMMENT '状态：1正常 0禁用',\n  `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',\n  `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',\n  `deleted` tinyint NOT NULL DEFAULT '0' COMMENT '逻辑删除：0未删 1已删',\n  KEY `idx_phone` (`phone`),\n  PRIMARY KEY (`id`),\n  UNIQUE KEY `uk_username` (`username`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='用户表'"
+    }
+  }
+}

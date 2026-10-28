@@ -34,7 +34,7 @@ public class DefaultOrderQueryService implements OrderQueryService {
             var order=owned(uid,no);
             var values=OrderItemRules.checked(order,items.selectActiveByOrderId(order.getId())).stream().map(item->
                 new OrderItemVO(item.getProductId(),item.getProductName(),item.getProductImage(),item.getPrice(),item.getQuantity(),
-                    OrderMoney.amount(item.getPrice(),item.getQuantity(),500))).toList();
+                    OrderMoney.amount(item.getPrice(),item.getQuantity(),500),item.getSkuId(),item.getSkuName(),item.getSkuSpec())).toList();
             return new OrderDetailVO(no,order.getStatus(),status(order).description(),OrderMoney.price(order.getTotalAmount()),
                 order.getReceiverName(),order.getReceiverPhone(),order.getReceiverAddress(),order.getRemark(),order.getLogisticsCompany(),
                 order.getTrackingNo(),order.getCreateTime(),order.getPayTime(),order.getShipTime(),order.getFinishTime(),values);

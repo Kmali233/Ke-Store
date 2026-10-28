@@ -4,6 +4,7 @@ import com.xiaoke.order.adapter.product.ProductDetailHttpClient;
 import com.xiaoke.order.config.OrderProperties;
 import com.xiaoke.order.dto.OrderCreateDTO;
 import com.xiaoke.order.vo.OrderCreateVO;
+import com.xiaoke.order.idempotency.OrderIdempotency;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.transaction.TransactionSystemException;
@@ -21,7 +22,8 @@ class OrderCommandFacadeTest {
     OrderTransactionService writes=mock(OrderTransactionService.class);
     OrderTransactions transactions=mock(OrderTransactions.class);
     Clock clock=Clock.fixed(Instant.parse("2026-12-31T15:59:59Z"),ZoneOffset.UTC);
-    OrderCommandFacade facade=new OrderCommandFacade(input,users,http,writes,transactions,clock,new OrderProperties());
+    OrderIdempotency idempotency=mock(OrderIdempotency.class);
+    OrderCommandFacade facade=new OrderCommandFacade(input,users,http,writes,transactions,clock,new OrderProperties(),idempotency);
     OrderCreateDTO dto=new OrderCreateDTO();
     { dto.setItems(java.util.List.of()); }
     DuplicateKeyException collision(String key) {
@@ -51,6 +53,24 @@ class OrderCommandFacadeTest {
         var misleading=new DuplicateKeyException("test",new SQLException("Duplicate entry 'uk_order_no' for key 'other'","23000",1062));
         assertThat(OrderCommandFacade.orderNumberCollision(misleading)).isFalse();
     }
+    @Test void requestDayStaysFixedWhenHttpAndRetryCrossMidnight() {
+        var now=new java.util.concurrent.atomic.AtomicReference<>(Instant.parse("2026-12-31T15:59:59Z"));
+        var zone=ZoneId.of("Asia/Shanghai");
+        Clock mutable=new Clock() {
+            public ZoneId getZone(){return zone;}
+            public Clock withZone(ZoneId ignored){return this;}
+            public Instant instant(){return now.get();}
+        };
+        var local=new OrderCommandFacade(input,users,http,writes,transactions,mutable,new OrderProperties(),idempotency);
+        doAnswer(invocation->{now.set(Instant.parse("2026-12-31T16:00:01Z"));return null;}).when(http).preread(anyList());
+        var result=new OrderCreateVO("20261231000001",0,java.math.BigDecimal.ONE);
+        when(writes.createOnce(eq(1L),same(dto),eq(LocalDate.of(2026,12,31))))
+            .thenThrow(collision("uk_order_no")).thenReturn(result);
+        assertThat(local.create(1L,dto)).isEqualTo(result);
+        verify(writes,times(2)).createOnce(eq(1L),same(dto),eq(LocalDate.of(2026,12,31)));
+        verify(writes,never()).createOnce(eq(1L),same(dto),eq(LocalDate.of(2027,1,1)));
+    }
+
     @Test void sameDayLockCoversEntireTransactionCall() throws Exception {
         var entered=new CountDownLatch(1); var release=new CountDownLatch(1); var secondHttp=new CountDownLatch(2);
         doAnswer(i->{ secondHttp.countDown(); return null; }).when(http).preread(anyList());

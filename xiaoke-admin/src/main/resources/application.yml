@@ -1,0 +1,32 @@
+server:
+  address: 127.0.0.1
+  port: 8085
+  servlet:
+    context-path: /api
+
+spring:
+  application:
+    name: xiaoke-admin
+  profiles:
+    default: dev
+
+mybatis-plus:
+  configuration:
+    log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl
+  global-config:
+    banner: false
+
+xiaoke:
+  admin:
+    enabled: true
+    secret-base64: ${XIAOKE_ADMIN_JWT_SECRET_BASE64}
+  jwt:
+    enabled: false
+    secret-base64: ${XIAOKE_JWT_SECRET_BASE64:}
+  web:
+    allowed-origins: []
+    max-request-body-bytes: 1048576
+
+logging:
+  pattern:
+    level: "%5p [traceId:%X{traceId}]"

@@ -4,6 +4,8 @@ import com.xiaoke.common.auth.JwtService;
 import com.xiaoke.common.auth.LoginInterceptor;
 import com.xiaoke.common.auth.LocalAdminInterceptor;
 import com.xiaoke.common.auth.LocalAdminProperties;
+import com.xiaoke.common.auth.admin.AdminAuthentication;
+import com.xiaoke.common.auth.admin.AdminInterceptor;
 import com.xiaoke.common.web.StrictInputPolicy;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.annotation.Configuration;
@@ -12,7 +14,7 @@ import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 /**
- * 注册买家身份拦截器。
+ * 注册后台身份、本地管理门禁、买家身份与输入策略拦截器。
  *
  * 注册范围写 /**，绝不能写 /api —— context-path 已经吃掉了 /api，
  * 再写一次会变成 /api/api/...，拦截器永远不生效。
@@ -24,19 +26,24 @@ public class AuthWebMvcConfig implements WebMvcConfigurer {
     private final ObjectProvider<JwtService> jwtServiceProvider;
     private final LocalAdminProperties localAdminProperties;
     private final Environment environment;
+    private final ObjectProvider<AdminAuthentication> adminAuthentication;
 
     public AuthWebMvcConfig(ObjectProvider<JwtService> jwtServiceProvider,
-                            LocalAdminProperties localAdminProperties, Environment environment) {
+                            LocalAdminProperties localAdminProperties, Environment environment,
+                            ObjectProvider<AdminAuthentication> adminAuthentication) {
         this.jwtServiceProvider = jwtServiceProvider;
         this.localAdminProperties = localAdminProperties;
         this.environment = environment;
+        this.adminAuthentication = adminAuthentication;
     }
 
-    // 重点：注册拦截器，启动时判断当前服务是否启用 JWT；
-    // 启用就注册一个拦截器去挂全路径，不启用就跳过
+    // 后台拦截器始终注册，认证组件缺失时对受保护方法拒绝访问。
+    // 买家拦截器仍按原有JWT配置装配。
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
         JwtService jwtService = jwtServiceProvider.getIfAvailable();
+        registry.addInterceptor(new AdminInterceptor(adminAuthentication.getIfAvailable()))
+                .addPathPatterns("/**").order(-30);
 
         // 注册 LocalAdminInterceptor
         // 告诉 Spring：以后处理匹配路径的请求时，先经过这个拦截器:localAdminProperties, environment

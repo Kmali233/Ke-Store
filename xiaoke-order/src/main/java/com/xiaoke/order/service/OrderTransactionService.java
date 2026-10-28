@@ -9,6 +9,7 @@ import com.xiaoke.order.entity.*;
 import com.xiaoke.order.enums.OrderStatus;
 import com.xiaoke.order.mapper.*;
 import com.xiaoke.order.vo.OrderCreateVO;
+import com.xiaoke.order.idempotency.OrderIdempotency;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import java.math.BigDecimal;
@@ -27,30 +28,49 @@ public class OrderTransactionService {
     private final OrdersMapper orders;
     private final OrderItemMapper items;
     private final OrderNoAllocator allocator;
+    private final OrderIdempotency idempotency;
+    private final OrderSkus skus;
+    public List<Long> productIds(OrderCreateDTO dto) {
+        return skus.resolve(dto.getItems()).stream().map(OrderSkus.Selection::productId).distinct().sorted().toList();
+    }
     public OrderCreateVO createOnce(Long uid,OrderCreateDTO dto,LocalDate day) {
+        return createOnce(uid,dto,day,null);
+    }
+    public OrderCreateVO createOnce(Long uid,OrderCreateDTO dto,LocalDate day,OrderIdempotency.Request request) {
         return transactions.create(()->{
             users.lock(uid);
+            // All order creators lock the user first, serializing one user's keys across JVMs.
+            var previous=idempotency.replay(uid,request,true);
+            if (previous!=null) { return previous; }
             ShippingSnapshot shipping=dto.getAddressId()==null
                     ? new ShippingSnapshot(dto.getReceiverName(),dto.getReceiverPhone(),dto.getReceiverAddress())
                     : addresses.readOwned(uid,dto.getAddressId());
-            var inputs=dto.getItems().stream().sorted(Comparator.comparing(OrderItemCreateDTO::getProductId)).toList();
-            var discovery=categories.discover(inputs.stream().map(OrderItemCreateDTO::getProductId).toList());
+            var inputs=skus.resolve(dto.getItems());
+            var productIds=inputs.stream().map(OrderSkus.Selection::productId).distinct().sorted().toList();
+            var discovery=categories.discover(productIds);
             categories.lockAndVerify(discovery);
+            var lockedProducts=new HashMap<Long,OrderProductRow>();
+            for(Long pid:productIds) {
+                var product=products.selectForUpdate(pid);categories.verifyProduct(discovery,product);
+                lockedProducts.put(pid,product);
+            }
             List<OrderItem> snapshots=new ArrayList<>();
             BigDecimal total=new BigDecimal("0.00");
             for (var input:inputs) {
-                var product=products.selectForUpdate(input.getProductId());
-                categories.verifyProduct(discovery,product); requireCounters(product);
-                int quantity=input.getQuantity();
-                if (product.getStock()<quantity || (long)product.getSales()+quantity>Integer.MAX_VALUE) { throw conflict(); }
-                var price=OrderMoney.price(product.getPrice());
+                var product=lockedProducts.get(input.productId());
+                var sku=skus.lock(input.skuId(),input.productId(),true);
+                int quantity=input.quantity();
+                if (sku.getStock()<quantity || (long)sku.getSales()+quantity>Integer.MAX_VALUE) { throw conflict(); }
+                var price=OrderMoney.price(sku.getPrice());
                 total=OrderMoney.bounded(total.add(OrderMoney.amount(price,quantity,400)),400);
                 var item=new OrderItem();
-                item.setProductId(product.getId()); item.setProductName(product.getName()); item.setProductImage(product.getImage());
+                item.setProductId(product.getId()); item.setProductName(product.getName());
+                item.setProductImage(sku.getImage()==null?product.getImage():sku.getImage());
+                item.setSkuId(sku.getId());item.setSkuName(sku.getName());item.setSkuSpec(sku.getSpecJson());
                 item.setPrice(price); item.setQuantity(quantity); item.setDeleted(0); snapshots.add(item);
             }
             String no=allocator.next(day);
-            for (var item:snapshots) { if (products.deduct(item.getProductId(),item.getQuantity())!=1) { throw conflict(); } }
+            for (var item:snapshots) { skus.deduct(item.getSkuId(),item.getQuantity()); }
             Orders order=new Orders();
             order.setOrderNo(no); order.setUserId(uid); order.setTotalAmount(total); order.setStatus(OrderStatus.PENDING_PAYMENT.code());
             order.setReceiverName(shipping.receiverName()); order.setReceiverPhone(shipping.receiverPhone());
@@ -58,7 +78,9 @@ public class OrderTransactionService {
             rows(orders.insert(order),1);
             for (var item:snapshots) { item.setOrderId(order.getId()); item.setOrderNo(no); }
             rows(items.insertBatch(snapshots),snapshots.size());
-            return new OrderCreateVO(no,order.getStatus(),total);
+            var result=new OrderCreateVO(no,order.getStatus(),total);
+            idempotency.save(uid,request,result);
+            return result;
         });
     }
     public void payOnce(Long uid,String no) {
@@ -83,19 +105,23 @@ public class OrderTransactionService {
             var order=requireOrder(orders.lockOwned(uid,no)); var status=status(order);
             if (status!=OrderStatus.PENDING_PAYMENT && status!=OrderStatus.PAID && status!=OrderStatus.PREPARING) { throw conflict(); }
             var snapshots=OrderItemRules.checked(order,items.selectAllByOrderId(order.getId()));
-            for (var item:snapshots) {
-                var product=products.selectForUpdate(item.getProductId());
+            for (Long pid:snapshots.stream().map(OrderItem::getProductId).distinct().sorted().toList()) {
+                var product=products.selectForUpdate(pid);
                 if (product==null) { throw new BusinessException(500,"原商品缺失"); }
-                requireCounters(product);
-                if ((long)product.getStock()+item.getQuantity()>Integer.MAX_VALUE || product.getSales()<item.getQuantity()) { throw conflict(); }
+            }
+            var restores=new TreeMap<Long,OrderItem>();
+            for(var item:snapshots) {
+                Long sid=skus.historicalSku(item);
+                if(restores.put(sid,item)!=null) throw new BusinessException(500,"重复的恢复SKU");
+            }
+            for(var entry:restores.entrySet()) {
+                var item=entry.getValue();var sku=skus.lock(entry.getKey(),item.getProductId(),false);
+                if ((long)sku.getStock()+item.getQuantity()>Integer.MAX_VALUE || sku.getSales()<item.getQuantity()) { throw conflict(); }
             }
             if (orders.casCancel(order.getId(),uid)!=1) { throw conflict(); }
-            for (var item:snapshots) { if (products.restore(item.getProductId(),item.getQuantity())!=1) { throw conflict(); } }
+            for (var entry:restores.entrySet()) {skus.restore(entry.getKey(),entry.getValue().getQuantity());}
             return null;
         });
-    }
-    private void requireCounters(OrderProductRow row) {
-        if (row.getStock()==null || row.getSales()==null || row.getStock()<0 || row.getSales()<0) { throw new BusinessException(500,"商品计数异常"); }
     }
     private Orders requireOrder(Orders row) { if (row==null) { throw new BusinessException(404,"订单不存在"); } return row; }
     private OrderStatus status(Orders row) {

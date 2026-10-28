@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>选择商品规格 · 小Ke商城</title><link rel="stylesheet" href="sku-demo.css"></head>
+<body><main><header><span>小Ke商城 / 商品选购</span><h1>挑选适合你的那一款</h1><p>选择规格、确认价格，再提交订单。</p></header>
+<section class="load"><label>商品编号<input id="productId" type="number" min="1" required placeholder="输入商品编号"></label><button id="load" type="button">查看商品</button></section>
+<section id="product" hidden><h2 id="name"></h2><p id="description"></p><div id="options" class="options" aria-label="商品规格"></div><p id="price" class="price"></p><p id="stock"></p></section>
+<form id="checkout" hidden><h2>确认收货信息</h2><fieldset id="fields"><label>购买数量<input id="quantity" type="number" min="1" max="999" value="1" required></label>
+<label>收货人<input id="receiverName" maxlength="50" required autocomplete="name"></label><label>联系电话<input id="receiverPhone" maxlength="20" required autocomplete="tel"></label>
+<label>收货地址<input id="receiverAddress" maxlength="255" required autocomplete="street-address"></label><label>订单备注<input id="remark" maxlength="255"></label>
+<details open><summary>本地演示连接</summary><label>订单服务地址<input id="orderBase" type="url" value="http://127.0.0.1:8082/api" required></label><label>买家登录凭证<input id="token" type="password" autocomplete="off" required placeholder="使用当前买家的登录凭证"></label></details></fieldset>
+<div class="actions"><button id="submit" type="submit">确认下单</button><button id="lookup" type="button" hidden>查询提交结果</button><button id="new" type="button" hidden>开始另一笔订单</button></div></form>
+<p id="message" role="status" aria-live="polite"></p><pre id="result" hidden></pre></main><script src="sku-demo.js"></script></body></html>

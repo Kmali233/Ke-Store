@@ -9,6 +9,8 @@ public class OrderItem {
 
     // 订单ID、商品ID
     private Long orderId,productId;
+    private Long skuId;
+    private String skuName,skuSpec;
     // 订单编号、商品名称、商品图片
     private String orderNo,productName,productImage;
     // 商品价格、数量

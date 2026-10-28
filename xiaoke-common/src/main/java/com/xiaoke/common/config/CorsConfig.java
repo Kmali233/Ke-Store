@@ -33,7 +33,7 @@ public class CorsConfig implements WebMvcConfigurer {
         registry.addMapping("/**")
                 .allowedOrigins(properties.getAllowedOrigins().toArray(String[]::new))
                 .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
-                .allowedHeaders("Content-Type", "Authorization", "X-Local-Admin-Key")
+                .allowedHeaders("Content-Type", "Authorization", "X-Local-Admin-Key", "Idempotency-Key")
                 .exposedHeaders("X-Trace-Id")
                 .allowCredentials(false)
                 .maxAge(3600);

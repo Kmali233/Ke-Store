@@ -41,7 +41,7 @@ public interface ProductMapper extends BaseMapper<Product> {
 
     /** 白名单更新：SQL 根本不出现 stock / sales，避免覆盖订单正在维护的计数。 */
     @Update("""
-        UPDATE t_product SET name=#{name},category_id=#{categoryId},price=#{price},
+        UPDATE t_product SET name=#{name},category_id=#{categoryId},
           image=#{image},description=#{description},status=#{status}
         WHERE id=#{id} AND deleted=0
         """)
