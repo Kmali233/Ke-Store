@@ -24,10 +24,18 @@ public final class DatabaseFailures {
     private DatabaseFailures() { }
 
     public static boolean connectionUnavailable(Throwable failure) {
-        for (Throwable cause : causes(failure)) {
+        Set<Throwable> chain = causes(failure);
+        boolean failedToBegin = chain.stream().anyMatch(CannotCreateTransactionException.class::isInstance);
+        for (Throwable cause : chain) {
             if (cause instanceof CannotGetJdbcConnectionException) { return true; }
             if (cause instanceof SQLException sql && sql.getSQLState() != null
                     && sql.getSQLState().startsWith("08")) { return true; }
+            // Hikari的已关闭连接代理只有普通SQLException，没有SQLState/vendor code。
+            // 限定在事务尚未开始的资源获取阶段；不把同形态的业务SQL错误统归503。
+            if (failedToBegin && cause.getClass() == SQLException.class) {
+                SQLException sql = (SQLException) cause;
+                if (sql.getSQLState() == null && sql.getErrorCode() == 0) { return true; }
+            }
         }
         return false;
     }

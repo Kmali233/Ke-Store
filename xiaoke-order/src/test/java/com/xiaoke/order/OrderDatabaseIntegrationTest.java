@@ -9,6 +9,7 @@ import com.xiaoke.order.allocator.OrderNoAllocator;
 import com.xiaoke.order.dto.*;
 import com.xiaoke.order.mapper.*;
 import com.xiaoke.order.service.*;
+import com.xiaoke.order.idempotency.*;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.slf4j.MDC;
@@ -43,6 +44,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 @EnabledIfEnvironmentVariable(named="XIAOKE_ORDER_DB_TESTS",matches="true")
 @SpringBootTest(classes=OrderApplication.class,properties={
     "spring.datasource.username=root","spring.datasource.password=","spring.datasource.driver-class-name=com.mysql.cj.jdbc.Driver",
+        "xiaoke.admin.enabled=true",
+        "xiaoke.admin.secret-base64=YWJjZGVmMDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODk=",
     "spring.datasource.hikari.connection-init-sql=SET SESSION innodb_lock_wait_timeout=3",
     "spring.datasource.hikari.maximum-pool-size=12","xiaoke.local-admin-enabled=true","xiaoke.local-admin-key=order-test-admin",
     "xiaoke.jwt.secret-base64=MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="})
@@ -85,9 +88,12 @@ class OrderDatabaseIntegrationTest {
     @Autowired org.springframework.context.ApplicationContext context;
     @Autowired org.mybatis.spring.SqlSessionTemplate sqlSession;
     @SpyBean OrderProductMapper productMapper;
+    @SpyBean OrderSkuMapper skuMapper;
     @SpyBean OrderItemMapper itemMapper;
     @SpyBean OrdersMapper ordersMapper;
     @SpyBean OrderNoAllocator allocator;
+    @SpyBean OrderIdempotencyMapper receiptMapper;
+    @SpyBean OrderTransactions transactions;
     JdbcTemplate jdbc;
     long a,b;
     String tokenA,tokenB;
@@ -100,7 +106,7 @@ class OrderDatabaseIntegrationTest {
         jdbc=new JdbcTemplate(source);
     }
     @BeforeEach void reset() {
-        for(String table:List.of("t_order_item","t_orders","t_product_attr","t_product","t_category","t_address","t_user")) jdbc.update("DELETE FROM "+table);
+        for(String table:List.of("t_product_sku","t_order_idempotency","t_order_item","t_orders","t_product_attr","t_product","t_category","t_address","t_user")) jdbc.update("DELETE FROM "+table);
         a=insert("INSERT INTO t_user(username,password) VALUES ('buyer_one','test-only-unused')");
         b=insert("INSERT INTO t_user(username,password) VALUES ('buyer_two','test-only-unused')");
         tokenA=jwt.issue(a,"buyer_one"); tokenB=jwt.issue(b,"buyer_two");
@@ -120,7 +126,7 @@ class OrderDatabaseIntegrationTest {
         var detail=api("GET","/order/"+no,null,tokenA,200);
         assertThat(detail.get("totalAmount").decimalValue()).isEqualByComparingTo("6.50");
         assertThat(detail.has("userId")).isFalse(); assertThat(detail.has("id")).isFalse();
-        assertThat(detail.get("items").get(0).size()).isEqualTo(6);
+        assertThat(detail.get("items").get(0).size()).isEqualTo(9);
         assertThat(api("GET","/order/page",null,tokenA,200).get("total").asInt()).isEqualTo(1);
         var status=api("GET","/order/"+no+"/status",null,tokenA,200);
         assertThat(status.size()).isEqualTo(6); assertThat(status.get("items").get(0).size()).isEqualTo(2);
@@ -206,11 +212,11 @@ class OrderDatabaseIntegrationTest {
 
     @Test void userIsRecheckedAfterHttpAndSnapshotsUseLockedProductValues() {
         long p=product("old",10,"1.00",null);
-        afterPreread=()->jdbc.update("UPDATE t_product SET name='new',price=3.25,image='/new.png' WHERE id=?",p);
+        afterPreread=()->{jdbc.update("UPDATE t_product SET name='new',image='/new.png' WHERE id=?",p);jdbc.update("UPDATE t_product_sku SET price=3.25 WHERE product_id=?",p);};
         String no=commands.create(a,dto(p,2)).orderNo();
         assertThat(queries.detail(a,no).items().get(0).productName()).isEqualTo("new");
         assertThat(queries.detail(a,no).totalAmount()).isEqualByComparingTo("6.50");
-        jdbc.update("UPDATE t_product SET name='later',price=99 WHERE id=?",p);
+        jdbc.update("UPDATE t_product SET name='later' WHERE id=?",p);jdbc.update("UPDATE t_product_sku SET price=99 WHERE product_id=?",p);
         assertThat(queries.detail(a,no).items().get(0).price()).isEqualByComparingTo("3.25");
         afterPreread=()->jdbc.update("UPDATE t_user SET status=0 WHERE id=?",a);
         assertCode(403,()->commands.create(a,dto(p,1)));
@@ -249,10 +255,10 @@ class OrderDatabaseIntegrationTest {
         String no=commands.create(a,dto(p,1)).orderNo();
         assertThat(queries.detail(a,no).totalAmount()).isEqualByComparingTo("99999999.99");
         assertCode(400,()->commands.create(a,dto(p,2)));
-        jdbc.update("UPDATE t_product SET price=1,stock=0 WHERE id=?",p); assertCode(409,()->commands.create(a,dto(p,1)));
-        jdbc.update("UPDATE t_product SET stock=10,sales=2147483646 WHERE id=?",p); commands.create(a,dto(p,1));
+        jdbc.update("UPDATE t_product_sku SET price=1,stock=0 WHERE product_id=? AND is_default=1",p); assertCode(409,()->commands.create(a,dto(p,1)));
+        jdbc.update("UPDATE t_product_sku SET stock=10,sales=2147483646 WHERE product_id=? AND is_default=1",p); commands.create(a,dto(p,1));
         assertCode(409,()->commands.create(a,dto(p,1)));
-        jdbc.update("UPDATE t_product SET sales=-1 WHERE id=?",p); assertCode(500,()->commands.create(a,dto(p,1)));
+        jdbc.update("UPDATE t_product_sku SET sales=-1 WHERE product_id=? AND is_default=1",p); assertCode(500,()->commands.create(a,dto(p,1)));
         assertThat(count("t_orders")).isEqualTo(2);
     }
 
@@ -260,9 +266,9 @@ class OrderDatabaseIntegrationTest {
         long p=product("p",10,"1",null),q=product("q",10,"1",null);
         var dto=dto(p,1); var second=new OrderItemCreateDTO();second.setProductId(q);second.setQuantity(1);
         dto.setItems(List.of(dto.getItems().get(0),second));
-        doReturn(0).when(productMapper).deduct(eq(q),anyInt());
+        doReturn(0).when(skuMapper).deduct(eq(defaultSku(q)),anyInt());
         assertCode(409,()->commands.create(a,dto)); assertCounts(p,10,0); assertThat(count("t_orders")).isZero();
-        org.mockito.Mockito.reset(productMapper);
+        org.mockito.Mockito.reset(skuMapper);
         doReturn(0).when(ordersMapper).insert(any(com.xiaoke.order.entity.Orders.class));
         assertCode(500,()->commands.create(a,dto)); assertCounts(p,10,0); assertCounts(q,10,0);
         org.mockito.Mockito.reset(ordersMapper);
@@ -299,6 +305,7 @@ class OrderDatabaseIntegrationTest {
         long p=product("p",10,"1",null);
         String no=commands.create(a,dto(p,1)).orderNo();
         jdbc.update("UPDATE t_orders SET status=2 WHERE order_no=?",no); commands.ship(no,ship());
+        assertCode(409,()->commands.ship(no,ship()));
         assertThat(queries.status(a,no).status()).isEqualTo(3); assertCode(409,()->commands.cancel(a,no));
         jdbc.update("UPDATE t_orders SET status=4 WHERE order_no=?",no);
         assertCode(409,()->commands.pay(a,no)); assertCode(409,()->commands.ship(no,ship())); assertCode(409,()->commands.cancel(a,no));
@@ -321,22 +328,22 @@ class OrderDatabaseIntegrationTest {
                 "UPDATE t_order_item SET product_id=999999 WHERE order_no=?",
                 "UPDATE t_order_item SET order_no='broken' WHERE order_no=?")) {
             String no=commands.create(a,dto(p,1)).orderNo();
-            int stock=jdbc.queryForObject("SELECT stock FROM t_product WHERE id=?",Integer.class,p);
+            int stock=jdbc.queryForObject("SELECT stock FROM t_product_sku WHERE product_id=? AND is_default=1",Integer.class,p);
             jdbc.update(damage,no); assertCode(500,()->commands.cancel(a,no));
             assertThat(jdbc.queryForObject("SELECT status FROM t_orders WHERE order_no=?",Integer.class,no)).isZero();
-            assertThat(jdbc.queryForObject("SELECT stock FROM t_product WHERE id=?",Integer.class,p)).isEqualTo(stock);
+            assertThat(jdbc.queryForObject("SELECT stock FROM t_product_sku WHERE product_id=? AND is_default=1",Integer.class,p)).isEqualTo(stock);
         }
     }
 
     @Test void restoreOverflowAndFailureAfterCasRollBackOrderStatus() {
         long p=product("p",10,"1",null);
         String no=commands.create(a,dto(p,1)).orderNo();
-        jdbc.update("UPDATE t_product SET stock=2147483647 WHERE id=?",p);
+        jdbc.update("UPDATE t_product_sku SET stock=2147483647 WHERE product_id=? AND is_default=1",p);
         assertCode(409,()->commands.cancel(a,no));
-        jdbc.update("UPDATE t_product SET stock=9,sales=0 WHERE id=?",p);
+        jdbc.update("UPDATE t_product_sku SET stock=9,sales=0 WHERE product_id=? AND is_default=1",p);
         assertCode(409,()->commands.cancel(a,no));
-        jdbc.update("UPDATE t_product SET sales=1 WHERE id=?",p);
-        doReturn(0).when(productMapper).restore(eq(p),anyInt());
+        jdbc.update("UPDATE t_product_sku SET sales=1 WHERE product_id=? AND is_default=1",p);
+        doReturn(0).when(skuMapper).restore(eq(defaultSku(p)),anyInt());
         assertCode(409,()->commands.cancel(a,no)); assertThat(queries.status(a,no).status()).isZero(); assertCounts(p,9,1);
     }
 
@@ -458,10 +465,171 @@ class OrderDatabaseIntegrationTest {
         }finally{committed.countDown();pool.shutdownNow();}
     }
 
+    @Test void productCategoryChangingAfterDiscoveryAbortsOrderWithoutTakingNewCategoryLocks() throws Exception {
+        long oldCategory=category(0),newCategory=category(0),pid=product("moving",10,"1",oldCategory);
+        var pool=Executors.newSingleThreadExecutor();
+        try(var blocker=source.getConnection()){
+            blocker.setAutoCommit(false);
+            try(var statement=blocker.createStatement()){
+                statement.executeUpdate("UPDATE t_product SET category_id="+newCategory+" WHERE id="+pid);
+                var create=pool.submit(()->code(()->commands.create(a,dto(pid,1))));
+                awaitWait();blocker.commit();
+                assertThat(create.get(8,TimeUnit.SECONDS)).isEqualTo(409);
+            }finally{blocker.rollback();}
+        }finally{pool.shutdownNow();}
+        assertCounts(pid,10,0);assertThat(count("t_orders")).isZero();
+    }
+
+    @Test void idempotentReplayReturnsOriginalReceiptAfterCancelAndProductDeletion() {
+        long p=product("p",10,"3.25",null);
+        var first=commands.create(a,dto(p,2),"Replay_1");
+        commands.cancel(a,first.orderNo());
+        jdbc.update("UPDATE t_product SET deleted=1,status=0,price=88 WHERE id=?",p);
+        jdbc.update("UPDATE t_orders SET deleted=1 WHERE order_no=?",first.orderNo());
+        HTTP_CALLS.set(0);
+        assertThat(commands.create(a,dto(p,2),"Replay_1")).isEqualTo(first);
+        assertThat(commands.creationResult(a,"Replay_1")).isEqualTo(first);
+        assertThat(first.status()).isZero();assertCounts(p,10,0);
+        assertThat(HTTP_CALLS).hasValue(0);assertThat(count("t_order_idempotency")).isEqualTo(1);
+    }
+
+    @Test void concurrentSameKeyAcrossIndependentFacadesCreatesOneOrder() throws Exception {
+        long p=product("p",10,"1",null);
+        var first=newFacade();var second=newFacade();
+        assertThat(race(()->first.create(a,dto(p,2),"race"),()->second.create(a,dto(p,2),"race"))).containsExactly(200,200);
+        assertCounts(p,8,2);assertThat(count("t_orders")).isEqualTo(1);
+        assertThat(count("t_order_item")).isEqualTo(1);assertThat(count("t_order_idempotency")).isEqualTo(1);
+    }
+
+    @Test void concurrentSameKeyDifferentQuantitiesHasOneWinner() throws Exception {
+        long p=product("p",10,"1",null);
+        var first=newFacade();var second=newFacade();
+        assertThat(race(()->first.create(a,dto(p,1),"conflict"),()->second.create(a,dto(p,2),"conflict")))
+                .containsExactlyInAnyOrder(200,409);
+        assertThat(count("t_orders")).isEqualTo(1);assertThat(count("t_order_idempotency")).isEqualTo(1);
+        int quantity=jdbc.queryForObject("SELECT quantity FROM t_order_item",Integer.class);
+        assertCounts(p,10-quantity,quantity);
+    }
+
+    @Test void keysAreCaseSensitiveAndScopedToUserWhileLegacyStillCreatesTwice() {
+        long p=product("p",10,"1",null);
+        var first=commands.create(a,dto(p,1),"Key");
+        assertThat(commands.create(a,dto(p,1),"key").orderNo()).isNotEqualTo(first.orderNo());
+        assertThat(commands.create(b,dto(p,1),"Key").orderNo()).isNotEqualTo(first.orderNo());
+        assertThat(commands.create(a,dto(p,1)).orderNo()).isNotEqualTo(commands.create(a,dto(p,1)).orderNo());
+        assertCounts(p,5,5);assertThat(count("t_order_idempotency")).isEqualTo(3);
+    }
+
+    @Test void receiptInsertFailureRollsBackReceiptOrderItemsAndStockThenSameKeyCanRetry() {
+        long p=product("p",10,"1",null);
+        doAnswer(invocation->{
+            sqlSession.insert("com.xiaoke.order.idempotency.OrderIdempotencyMapper.insert",
+                Map.of("uid",invocation.getArgument(0),"request",invocation.getArgument(1),"result",invocation.getArgument(2)));
+            assertThat(count("t_order_idempotency")).isEqualTo(1);
+            throw new BusinessException(500,"injected after receipt write");
+        }).when(receiptMapper).insert(anyLong(),any(),any());
+        assertCode(500,()->commands.create(a,dto(p,2),"rollback"));
+        assertCounts(p,10,0);assertThat(count("t_orders")).isZero();
+        assertThat(count("t_order_item")).isZero();assertThat(count("t_order_idempotency")).isZero();
+        org.mockito.Mockito.reset(receiptMapper);
+        commands.create(a,dto(p,2),"rollback");assertCounts(p,8,2);
+        assertThat(count("t_order_idempotency")).isEqualTo(1);
+    }
+
+    @Test void simulatedLostCommitAcknowledgementRequiresLookupAndNeverAutomaticallyRecreates() {
+        long p=product("p",10,"1",null);
+        doAnswer(invocation->{
+            invocation.callRealMethod(); // Real DB commit succeeds; simulate losing its acknowledgement.
+            throw new org.springframework.transaction.TransactionSystemException("injected unknown completion");
+        }).when(transactions).create(any());
+        assertThatThrownBy(()->commands.create(a,dto(p,2),"unknown"))
+                .isInstanceOf(org.springframework.transaction.TransactionSystemException.class);
+        var saved=commands.creationResult(a,"unknown");
+        assertThat(commands.create(a,dto(p,2),"unknown")).isEqualTo(saved);
+        verify(transactions,times(1)).create(any());assertCounts(p,8,2);
+        assertThat(count("t_orders")).isEqualTo(1);
+    }
+
+    @Test void replayAddressReferenceSurvivesAddressDeletionAndNormalizedItemOrdering() {
+        long p=product("p",10,"1",null),q=product("q",10,"2",null);
+        long address=insert("INSERT INTO t_address(user_id,receiver_name,receiver_phone,detail_address) VALUES (?,?,?,?)",a,"A","1","Road");
+        var request=reference(p,address);request.setItems(List.of(dto(p,1).getItems().get(0),dto(q,2).getItems().get(0)));
+        request.setRemark(" note ");var first=commands.create(a,request,"address");
+        jdbc.update("DELETE FROM t_address WHERE id=?",address);
+        request.setItems(List.of(request.getItems().get(1),request.getItems().get(0)));request.setRemark("note");
+        assertThat(commands.create(a,request,"address")).isEqualTo(first);
+        assertCode(409,()->commands.create(a,dto(p,1),"address"));
+    }
+
+    @Test void idempotencyHttpHeaderAndResultOwnershipContract() throws Exception {
+        long p=product("p",10,"1",null);String body=payload(dto(p,1));
+        for(String key:List.of("","has space","bad,joined","a".repeat(65))) {
+            response(post("/order").header("Authorization",tokenA).header("Idempotency-Key",key)
+                    .contentType(MediaType.APPLICATION_JSON).content(body),400);
+        }
+        response(post("/order").header("Authorization",tokenA).header("Idempotency-Key","a","b")
+                .contentType(MediaType.APPLICATION_JSON).content(body),400);
+        var first=response(post("/order").header("Authorization",tokenA).header("Idempotency-Key","api")
+                .contentType(MediaType.APPLICATION_JSON).content(body),200).get("data");
+        assertThat(api("GET","/order/idempotency/api",null,tokenA,200)).isEqualTo(first);
+        api("GET","/order/idempotency/api",null,tokenB,404);
+        api("GET","/order/idempotency/api",null,null,401);
+        jdbc.update("UPDATE t_user SET status=0 WHERE id=?",a);
+        api("GET","/order/idempotency/api",null,tokenA,403);
+    }
+
+    @Test void twoSkusOfOneSpuHaveIndependentPricesStockAndImmutableSnapshots() {
+        long pid=product("phone",10,"1",null),black=sku(pid,"black",3,"2.50"),white=sku(pid,"white",4,"4.00");
+        var dto=skuDto(black,2);dto.setItems(List.of(dto.getItems().get(0),skuDto(white,1).getItems().get(0)));
+        var created=commands.create(a,dto,"two-skus");assertThat(created.totalAmount()).isEqualByComparingTo("9.00");
+        assertSku(black,1,2);assertSku(white,3,1);assertCounts(pid,10,0);
+        jdbc.update("UPDATE t_product SET name='changed' WHERE id=?",pid);
+        jdbc.update("UPDATE t_product_sku SET name='later',spec_json='{\"color\":\"new\"}',price=99,status=0,deleted=1 WHERE id=?",black);
+        var detail=queries.detail(a,created.orderNo());assertThat(detail.items()).hasSize(2);
+        var original=detail.items().stream().filter(i->i.skuId().equals(black)).findFirst().orElseThrow();
+        assertThat(original.productName()).isEqualTo("phone");assertThat(original.skuName()).isEqualTo("black");
+        assertThat(original.skuSpec()).isEqualTo("{\"color\":\"black\"}");assertThat(original.price()).isEqualByComparingTo("2.50");
+        assertThat(commands.create(a,dto,"two-skus")).isEqualTo(created);
+        commands.cancel(a,created.orderNo());assertSku(black,3,0);assertSku(white,4,0);
+    }
+
+    @Test void legacyNullSkuSnapshotQueriesAndCancelsIntoDefaultSku() {
+        long pid=product("legacy",5,"2",null);var created=commands.create(a,dto(pid,2),"legacy-v1");
+        jdbc.update("UPDATE t_order_item SET sku_id=NULL,sku_name=NULL,sku_spec=NULL WHERE order_no=?",created.orderNo());
+        assertThat(queries.detail(a,created.orderNo()).items().get(0).skuId()).isNull();
+        assertThat(commands.create(a,dto(pid,2),"legacy-v1")).isEqualTo(created);
+        commands.cancel(a,created.orderNo());assertCounts(pid,5,0);
+    }
+
+    @Test void skuAvailabilityExclusivityAndResolvedDuplicatesAreEnforced() throws Exception {
+        long pid=product("p",5,"1",null),sid=sku(pid,"blue",2,"3");
+        var request=skuDto(sid,1);request.getItems().get(0).setProductId(pid);
+        assertCode(400,()->commands.create(a,request));
+        var duplicate=dto(pid,1);duplicate.setItems(List.of(duplicate.getItems().get(0),skuDto(defaultSku(pid),1).getItems().get(0)));
+        assertCode(400,()->commands.create(a,duplicate));
+        jdbc.update("UPDATE t_product_sku SET status=0 WHERE id=?",sid);assertCode(404,()->commands.create(a,skuDto(sid,1)));
+        jdbc.update("UPDATE t_product_sku SET status=1,deleted=1 WHERE id=?",sid);assertCode(404,()->commands.create(a,skuDto(sid,1)));
+        assertSku(sid,2,0);assertThat(count("t_orders")).isZero();
+    }
+
+    @Test void independentFacadesRaceForOneSkuWithoutTouchingSiblingSku() throws Exception {
+        long pid=product("p",5,"1",null),sid=sku(pid,"red",1,"3"),sibling=sku(pid,"blue",4,"4");
+        var first=newFacade();var second=newFacade();
+        assertThat(race(()->first.create(a,skuDto(sid,1),"one"),()->second.create(b,skuDto(sid,1),"two"))).containsExactlyInAnyOrder(200,409);
+        assertSku(sid,0,1);assertSku(sibling,4,0);assertCounts(pid,5,0);
+    }
+
+    private OrderCreateDTO skuDto(long sid,int quantity) {var value=dto(1,quantity);value.getItems().get(0).setProductId(null);value.getItems().get(0).setSkuId(sid);return value;}
+    private long sku(long pid,String name,int stock,String price) {
+        String spec="{\"color\":\""+name+"\"}";
+        return insert("INSERT INTO t_product_sku(product_id,name,spec_json,spec_hash,price,stock) VALUES (?,?,?,SHA2(?,256),?,?)",pid,name,spec,spec,new java.math.BigDecimal(price),stock);
+    }
+    private void assertSku(long sid,int stock,int sales){assertThat(jdbc.queryForObject("SELECT stock FROM t_product_sku WHERE id=?",Integer.class,sid)).isEqualTo(stock);assertThat(jdbc.queryForObject("SELECT sales FROM t_product_sku WHERE id=?",Integer.class,sid)).isEqualTo(sales);}
+
     private OrderCommandFacade newFacade(){
         return new OrderCommandFacade(context.getBean(OrderInput.class),context.getBean(OrderUsers.class),
             context.getBean(ProductDetailHttpClient.class),writes,context.getBean(OrderTransactions.class),
-            context.getBean(Clock.class),context.getBean(com.xiaoke.order.config.OrderProperties.class));
+            context.getBean(Clock.class),context.getBean(com.xiaoke.order.config.OrderProperties.class),context.getBean(OrderIdempotency.class));
     }
     private List<Integer> race(Runnable first,Runnable second) throws Exception {
         var start=new CyclicBarrier(2);var pool=Executors.newFixedThreadPool(2);
@@ -504,14 +672,46 @@ class OrderDatabaseIntegrationTest {
     }
     private OrderCreateDTO reference(long pid,long aid){var dto=new OrderCreateDTO();dto.setItems(dto(pid,1).getItems());dto.setAddressId(aid);return dto;}
     private OrderShipDTO ship(){var dto=new OrderShipDTO();dto.setLogisticsCompany("test");dto.setTrackingNo("T1");return dto;}
-    private long product(String name,int stock,String price,Long category){return insert("INSERT INTO t_product(name,price,stock,category_id) VALUES (?,?,?,?)",name,new java.math.BigDecimal(price),stock,category);}
+    private long product(String name,int stock,String price,Long category){
+        long pid=insert("INSERT INTO t_product(name,price,stock,category_id) VALUES (?,?,?,?)",name,new java.math.BigDecimal(price),stock,category);
+        jdbc.update("INSERT INTO t_product_sku(product_id,name,spec_json,spec_hash,price,stock,sales,is_default) SELECT id,'default','{}',SHA2('{}',256),price,stock,sales,1 FROM t_product WHERE id=?",pid);
+        return pid;
+    }
+    private long defaultSku(long pid){return jdbc.queryForObject("SELECT id FROM t_product_sku WHERE product_id=? AND is_default=1",Long.class,pid);}
     private long category(long parent){return insert("INSERT INTO t_category(name,parent_id) VALUES ('test',?)",parent);}
     private long insert(String sql,Object...values){
         var keys=new GeneratedKeyHolder();jdbc.update(c->{var ps=c.prepareStatement(sql,Statement.RETURN_GENERATED_KEYS);
             for(int i=0;i<values.length;i++)ps.setObject(i+1,values[i]);return ps;},keys);return Objects.requireNonNull(keys.getKey()).longValue();
     }
     private long count(String table){return jdbc.queryForObject("SELECT COUNT(*) FROM "+table,Long.class);}
-    private void assertCounts(long pid,int stock,int sales){assertThat(jdbc.queryForObject("SELECT stock FROM t_product WHERE id=?",Integer.class,pid)).isEqualTo(stock);assertThat(jdbc.queryForObject("SELECT sales FROM t_product WHERE id=?",Integer.class,pid)).isEqualTo(sales);}
+    private void assertCounts(long pid,int stock,int sales){assertThat(jdbc.queryForObject("SELECT stock FROM t_product_sku WHERE product_id=? AND is_default=1",Integer.class,pid)).isEqualTo(stock);assertThat(jdbc.queryForObject("SELECT sales FROM t_product_sku WHERE product_id=? AND is_default=1",Integer.class,pid)).isEqualTo(sales);}
     private int code(Runnable action){try{action.run();return 200;}catch(BusinessException failure){return failure.getCode();}}
     private void assertCode(int code,Runnable action){assertThatThrownBy(action::run).isInstanceOfSatisfying(BusinessException.class,e->assertThat(e.getCode()).isEqualTo(code));}
+    @Autowired com.xiaoke.common.auth.admin.AdminAuthentication backendAuthentication;
+    @Autowired com.xiaoke.common.auth.admin.AdminJwtService backendTokens;
+
+    @Test void readOnlyAdminAdapterUsesSharedRulesAndSeesRevocationImmediately() {
+        jdbc.update("DELETE FROM t_admin_account");
+        jdbc.update("INSERT INTO t_admin_account(id,username,password) VALUES(99,'ops_admin','unused-test-only')");
+        var principal = new com.xiaoke.common.auth.admin.AdminPrincipal(99, "ops_admin", 0);
+        String token = backendTokens.issue(principal);
+        assertThat(backendAuthentication.authenticate(token)).isEqualTo(principal);
+        jdbc.update("UPDATE t_admin_account SET status=0 WHERE id=99");
+        assertThatThrownBy(() -> backendAuthentication.authenticate(token)).isInstanceOf(BusinessException.class);
+        jdbc.update("UPDATE t_admin_account SET status=1,token_version=1 WHERE id=99");
+        assertThatThrownBy(() -> backendAuthentication.authenticate(token)).isInstanceOf(BusinessException.class);
+        String fresh = backendTokens.issue(new com.xiaoke.common.auth.admin.AdminPrincipal(99, "ops_admin", 1));
+        assertThat(backendAuthentication.authenticate(fresh).adminId()).isEqualTo(99);
+        jdbc.update("UPDATE t_admin_account SET deleted=1 WHERE id=99");
+        assertThatThrownBy(() -> backendAuthentication.authenticate(fresh)).isInstanceOf(BusinessException.class);
+        jdbc.update("DELETE FROM t_admin_account");
+        assertThatThrownBy(() -> backendAuthentication.authenticate(fresh)).isInstanceOf(BusinessException.class);
+    }
+
+    @Test void administratorAccountEndpointsBelongOnlyToAdminApplication() throws Exception {
+        for (String path : java.util.List.of("/admin/auth/me", "/admin/auth/login", "/admin/auth/logout")) {
+            assertThat(mvc.perform(get(path)).andReturn().getResponse().getStatus()).isEqualTo(404);
+        }
+    }
+
 }

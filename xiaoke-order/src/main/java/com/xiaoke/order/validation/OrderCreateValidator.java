@@ -12,11 +12,12 @@ public class OrderCreateValidator
         if (value==null) { return true; }
         if (!value.validShippingSource()) { return false; }
         if (value.getItems()==null) { return true; }
-        var ids=new HashSet<Long>();
+        var ids=new HashSet<String>();
         for (var item:value.getItems()) {
-            if (item!=null && item.getProductId()!=null
-                    && !ids.add(item.getProductId())) {
-                return false;
+            if (item!=null) {
+                if((item.getProductId()==null)==(item.getSkuId()==null)) return false;
+                String identity=item.getSkuId()==null ? "p"+item.getProductId() : "s"+item.getSkuId();
+                if(!ids.add(identity)) return false;
             }
         }
         return true;

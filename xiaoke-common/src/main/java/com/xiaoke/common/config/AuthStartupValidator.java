@@ -3,6 +3,7 @@ package com.xiaoke.common.config;
 import com.xiaoke.common.auth.JwtService;
 import com.xiaoke.common.auth.LoginRequired;
 import com.xiaoke.common.auth.LocalAdminInterceptor;
+import com.xiaoke.common.auth.admin.AdminInterceptor;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.SmartInitializingSingleton;
 import org.springframework.core.annotation.AnnotatedElementUtils;
@@ -51,6 +52,10 @@ public class AuthStartupValidator implements SmartInitializingSingleton {
         for (HandlerMethod handler : handlers) {
             boolean login = AnnotatedElementUtils.hasAnnotation(handler.getMethod(), LoginRequired.class)
                     || AnnotatedElementUtils.hasAnnotation(handler.getBeanType(), LoginRequired.class);
+            if (AdminInterceptor.requiresAdmin(handler)
+                    && (login || LocalAdminInterceptor.isAdmin(handler))) {
+                throw new IllegalStateException("AdminRequired cannot be combined with buyer/local admin guards");
+            }
             if (login && LocalAdminInterceptor.isAdmin(handler)) {
                 throw new IllegalStateException("接口不能同时声明 LoginRequired 与 LocalAdminOnly: "
                         + handler.getBeanType().getSimpleName() + "#" + handler.getMethod().getName());

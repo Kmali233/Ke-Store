@@ -12,15 +12,33 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
-@RestController @RequestMapping("/order") @RequiredArgsConstructor
+@RestController
+@RequestMapping("/order")
+@RequiredArgsConstructor
 public class OrderController {
     private final OrderCommandService commands;
     private final OrderQueryService queries;
 
     // 创建订单
-    @PostMapping @LoginRequired
-    public Result<OrderCreateVO> create(@Valid @RequestBody OrderCreateDTO dto) {
-        return Result.success(commands.create(UserContext.requireUserId(),dto));
+    @PostMapping
+    @LoginRequired
+    public Result<OrderCreateVO> create(@Valid @RequestBody OrderCreateDTO dto,HttpServletRequest request) {
+        /** 从请求头中读取Idempotency-Key
+         * uid：谁买
+         * dto：买什么、买多少、寄哪里
+         * key：这一次购买的标记
+         * Controller 负责把这些信息交给 Service。
+         */
+        var keys=java.util.Collections.list(request.getHeaders("Idempotency-Key"));
+        if (keys.size()>1) {
+            throw new BusinessException(400,"Idempotency-Key只能传一次");
+        }
+        return Result.success(commands.create(UserContext.requireUserId(),dto,keys.isEmpty()?null:keys.get(0)));
+    }
+
+    @GetMapping("/idempotency/{key}") @LoginRequired @AllowedQuery({})
+    public Result<OrderCreateVO> creationResult(@PathVariable String key) {
+        return Result.success(commands.creationResult(UserContext.requireUserId(),key));
     }
 
     // 分页查询订单

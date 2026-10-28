@@ -1,6 +1,7 @@
 package com.xiaoke.common.web;
 
 import com.xiaoke.common.auth.UserContext;
+import com.xiaoke.common.auth.admin.AdminContext;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -13,7 +14,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 import java.io.IOException;
 
 /**
- * 最外层请求上下文清理。自动清理用户上下文
+ * 最外层请求上下文清理。同时清理买家与后台两类独立身份。
  *
  * 排序取 HIGHEST_PRECEDENCE，保证它是最外层：
  * 入栈时先清一次（上一个请求可能在同一线程留下身份），
@@ -34,12 +35,14 @@ public class RequestContextCleanupFilter extends OncePerRequestFilter {
     ) throws ServletException, IOException {
         /** 请求进来，先清理可能残留的身份(避免线程里残留上一个请求的身份) */
         UserContext.clear();
+        AdminContext.clear();
         try {
             /** 让请求继续往后走，进入后续处理流程 */
             filterChain.doFilter(request, response);
         } finally {
             /** 后续流程结束，清理这次请求保存的身份 */
             UserContext.clear();
+            AdminContext.clear();
         }
     }
 }

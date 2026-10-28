@@ -5,6 +5,7 @@ import lombok.Setter;
 
 @Getter @Setter
 public class OrderItemCreateDTO {
-    @NotNull @Positive private Long productId;
+    @Positive private Long productId;
+    @Positive private Long skuId;
     @NotNull @Min(1) @Max(999) private Integer quantity;
 }

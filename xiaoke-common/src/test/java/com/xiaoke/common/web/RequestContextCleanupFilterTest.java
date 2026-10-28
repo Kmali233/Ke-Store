@@ -2,6 +2,8 @@ package com.xiaoke.common.web;
 
 import com.xiaoke.common.auth.AuthPrincipal;
 import com.xiaoke.common.auth.UserContext;
+import com.xiaoke.common.auth.admin.AdminContext;
+import com.xiaoke.common.auth.admin.AdminPrincipal;
 import com.xiaoke.common.exception.BusinessException;
 import jakarta.servlet.FilterChain;
 import org.junit.jupiter.api.DisplayName;
@@ -41,5 +43,16 @@ class RequestContextCleanupFilterTest {
             throw new IllegalStateException("boom");
         }));
         assertThrows(BusinessException.class, () -> UserContext.requireUserId());
+    }
+
+    @Test
+    void administratorIdentityIsClearedBeforeAndAfterFailedRequests() {
+        AdminContext.set(new AdminPrincipal(1, "stale_admin", 0));
+        assertThrows(IllegalStateException.class, () -> run((req, res) -> {
+            assertThrows(BusinessException.class, AdminContext::requirePrincipal);
+            AdminContext.set(new AdminPrincipal(2, "next_admin", 0));
+            throw new IllegalStateException("synthetic failure");
+        }));
+        assertThrows(BusinessException.class, AdminContext::requirePrincipal);
     }
 }

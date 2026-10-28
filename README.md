@@ -1,5 +1,9 @@
 # 小Ke商城（xiaoke-mall）
 
+阶段04后台认证采用独立 `xiaoke-admin` Maven模块，默认端口8085（保留原AI端口8084），统一拥有 `/api/admin/auth/login`、`/me`、`/logout` 及离线账号初始化/恢复。user只承载买家业务；common仅保留共享认证规则与只读查询契约；product/order通过各自适配器读取共享MySQL中的最小账号状态。先迁移V4，再为admin注入独立后台密钥。配置、调用链、迁移兼容和本轮验收结果见[后台管理员认证详细实现说明](xiaoke-admin/详细实现说明.md)，完整验收入口为 `python scripts/verify-admin-auth.py`。现有商品写接口和订单发货仍使用本地管理门禁，阶段05再实现角色授权。
+
+阶段03已增加SPU/SKU规格：商品详情返回独立SKU价格/库存；新订单使用skuId并保存规格快照；旧productId请求映射默认SKU，历史订单和v1幂等键继续兼容。部署前停止旧product/order写进程，通过迁移入口完成V3及默认SKU回填。接口与边界见[商品规格详细实现说明](xiaoke-product/详细实现说明.md)，完整验收入口为 `python scripts/verify-skus.py`。本地规格选择页为product服务的 `/api/sku-demo.html`。
+
 > **一个对标小米商城的简化版自营电商平台。** 先把一套真实、可控、能讲透的业务体系搭起来，再在它之上做一个既能答政策、又能查真实订单的 AI 客服；后续按月度版本持续迭代。
 
 本项目不是一个「什么都做一点」的课堂练习，而是一次**有边界、有取舍、可演进**的工程实践。
@@ -168,6 +172,7 @@ xiaoke-mall/                          # 父工程 (packaging=pom)：聚合子模
 ├── xiaoke-product/                   # 商品服务（端口 8081）✅ 商品、搜索、分类、参数共12接口
 ├── xiaoke-user/                      # 用户服务（端口 8083）✅ 注册、登录、me、地址五接口
 ├── xiaoke-order/                     # 订单服务（端口 8082）✅ 创建、查询、模拟支付、发货、取消七接口
+├── xiaoke-admin/                     # 后台身份（端口 8085）登录、身份、退出、离线初始化/恢复
 ├── xiaoke-ai/                        # AI 客服 BFF（端口 8084）         ⏳ M3
 ├── sql/xiaoke_mall.sql               # 建库建表脚本
 ├── frontend/                         # 前端静态页（小米商城风格，71 张图）
@@ -176,13 +181,13 @@ xiaoke-mall/                          # 父工程 (packaging=pom)：聚合子模
 
 > **组件扫描**：服务需要扫描自身业务和 common。user 使用 `@SpringBootApplication(scanBasePackages = {"com.xiaoke.user", "com.xiaoke.common"})` 与 `@MapperScan("com.xiaoke.user.mapper")`，加载通用组件并限定自身 Mapper。
 >
-> **端口规划**：网关预留 `8080`；业务服务从 `8081` 起（product=8081，order=8082，user=8083，ai=8084…）。
+> **端口规划**：网关预留 `8080`；product=8081，order=8082，user=8083，ai预留8084，admin=8085。
 
 ---
 
 ## 六、快速开始
 
-1. 首次准备空库时检查 `sql/xiaoke_mall.sql` 后执行；已有数据库不要重跑，该脚本包含 DROP TABLE，会清除现有数据。
+1. 数据库统一使用 [增量迁移入口](sql/README.md)：空库显式 migrate；已有库先停写、核对结构、备份后显式 baseline。`sql/xiaoke_mall.sql` 只保留为历史参考，其中的 DROP TABLE 不再用于正常初始化或升级。
 2. 在 IDEA Run Configuration 的环境变量或启动进程环境中显式设置 `DB_USERNAME`、`DB_PASSWORD`；dev 可选 `DB_HOST`、`DB_PORT`、`DB_NAME`，prod 提供完整 `DB_URL`。均不提供默认账号口令，根目录 `.env` 不会被自动加载。
 3. 启动商品服务：运行 `ProductApplication`，端口 `8081`，统一前缀 `/api`
 4. 示例接口（商品）：
@@ -223,11 +228,11 @@ xiaoke-mall/                          # 父工程 (packaging=pom)：聚合子模
 
 订单服务使用与user相同的数据库和 `XIAOKE_JWT_SECRET_BASE64`，启动 `OrderApplication` 或构建后运行 `java -jar xiaoke-order/target/xiaoke-order-1.0.0.jar`，端口8082。创建订单前启动product，`PRODUCT_BASE_URL` 在dev默认 `http://127.0.0.1:8081/api`，prod必须显式配置。
 
-七接口为 `POST /api/order`、`GET /api/order/page`、`GET /api/order/{orderNo}`、`GET /api/order/{orderNo}/status`、`POST /api/order/{orderNo}/pay`、`POST /api/order/{orderNo}/ship`、`POST /api/order/{orderNo}/cancel`。六个买家接口使用原始JWT；ship使用本地管理门禁。完整契约、收货二选一、库存事务和阅读顺序见 [xiaoke-order/README.md](xiaoke-order/README.md)。
+订单接口为 `POST /api/order`、`GET /api/order/idempotency/{key}`、`GET /api/order/page`、`GET /api/order/{orderNo}`、`GET /api/order/{orderNo}/status`、`POST /api/order/{orderNo}/pay`、`POST /api/order/{orderNo}/ship`、`POST /api/order/{orderNo}/cancel`。七个买家接口使用原始JWT；ship使用本地管理门禁。完整契约、收货二选一、库存事务和阅读顺序见 [xiaoke-order/README.md](xiaoke-order/README.md)。
 
-订单快照、库存扣减/恢复和下单件数使用同库事务；order通过自有适配Mapper访问关联表，不依赖user/product业务jar。创建没有请求幂等，模拟支付/取消不涉及真实资金。
+订单快照、库存扣减/恢复和下单件数使用同库事务；order通过自有适配Mapper访问关联表，不依赖user/product业务jar。阶段02支持 `Idempotency-Key`：同用户同键同内容返回首次创建结果，同键异参409；旧客户端不带键仍可能创建多单。需先应用V2迁移，键永久保留。模拟支付/取消不涉及真实资金。实现与验收见 [详细实现说明](xiaoke-order/详细实现说明.md)。
 
-真实订单数据库测试需要 `XIAOKE_ORDER_DB_TESTS=true` 和 `XIAOKE_ORDER_TEST_DB_URL`，仅允许专用 `xiaoke_order_verify_*` 库。测试会清空该库并注入故障，默认跳过。当前机器的完整复现入口为 `output/run-order-verification.py`。
+真实订单数据库测试需要 `XIAOKE_ORDER_DB_TESTS=true` 和 `XIAOKE_ORDER_TEST_DB_URL`，仅允许专用 `xiaoke_order_verify_*` 库。测试会清空该库并注入故障，默认跳过。阶段02完整复现入口为 `python scripts/verify-idempotency.py`，包括隔离数据库、迁移、全部JUnit和双订单进程HTTP并发与故障验证。
 
 **多服务启动**
 
@@ -262,6 +267,8 @@ xiaoke-mall/                          # 父工程 (packaging=pom)：聚合子模
 
 
 ## 八、工程约定
+
+最终系统验收可在仓库根目录运行 `python scripts/verify-system.py`。脚本创建独立MySQL实例，执行全量 `clean verify`、两个order进程的真实HTTP并发、库存账本核对和服务中断503检查，最后清理临时环境。依赖、参数与证据位置见 [scripts/README.md](scripts/README.md)。
 
 1. **ADR 只增不改**：架构决策一旦记录，后续若推翻，新增一条说明「取代 ADR-00X」，不修改原文——保留决策痕迹。
 2. **接口先改文档再改代码**：契约文档是前后端的唯一事实来源。

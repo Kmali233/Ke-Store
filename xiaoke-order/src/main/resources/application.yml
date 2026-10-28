@@ -25,6 +25,9 @@ mybatis-plus:
       logic-not-delete-value: 0
 
 xiaoke:
+  admin:
+    enabled: ${XIAOKE_ADMIN_AUTH_ENABLED:false}
+    secret-base64: ${XIAOKE_ADMIN_JWT_SECRET_BASE64:}
   jwt:
     enabled: true
     secret-base64: ${XIAOKE_JWT_SECRET_BASE64}

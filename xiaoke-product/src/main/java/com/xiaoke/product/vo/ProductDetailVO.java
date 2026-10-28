@@ -7,4 +7,5 @@ import java.util.List;
 @Getter @Setter
 public class ProductDetailVO extends ProductVO {
     private List<ProductAttrVO> attrs = List.of();
+    private List<SkuVO> skus = List.of();
 }

@@ -10,9 +10,9 @@ public interface OrderItemMapper extends BaseMapper<OrderItem> {
     List<OrderItem> selectAllByOrderId(@Param("id") Long id);
     @Insert("""
         <script>
-        INSERT INTO t_order_item(order_id,order_no,product_id,product_name,product_image,price,quantity,deleted)
+        INSERT INTO t_order_item(order_id,order_no,product_id,product_name,product_image,price,quantity,sku_id,sku_name,sku_spec,deleted)
         VALUES <foreach collection="rows" item="r" separator=",">
-        (#{r.orderId},#{r.orderNo},#{r.productId},#{r.productName},#{r.productImage},#{r.price},#{r.quantity},0)
+        (#{r.orderId},#{r.orderNo},#{r.productId},#{r.productName},#{r.productImage},#{r.price},#{r.quantity},#{r.skuId},#{r.skuName},#{r.skuSpec},0)
         </foreach>
         </script>
         """)

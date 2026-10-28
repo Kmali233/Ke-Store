@@ -323,6 +323,53 @@ class UserDatabaseIntegrationTest {
         } finally { executor.shutdownNow(); }
     }
 
+    @Test
+    void concurrentSetDefaultAndDefaultVersusDeleteKeepAtMostOneDefault() throws Exception {
+        register("default_races");
+        long uid = userMapper.findIncludingDeleted("default_races").getId();
+        long first = addresses.create(uid, addressDto(false)).id();
+        long second = addresses.create(uid, addressDto(false)).id();
+        var barrier = new CyclicBarrier(2);
+        var executor = Executors.newFixedThreadPool(2);
+        try {
+            var a = executor.submit(() -> { barrier.await(5, TimeUnit.SECONDS); addresses.setDefault(uid, first); return 200; });
+            var b = executor.submit(() -> { barrier.await(5, TimeUnit.SECONDS); addresses.setDefault(uid, second); return 200; });
+            assertThat(a.get(8, TimeUnit.SECONDS)).isEqualTo(200);
+            assertThat(b.get(8, TimeUnit.SECONDS)).isEqualTo(200);
+            assertThat(addresses.list(uid).stream().filter(row -> row.isDefault()).count()).isEqualTo(1);
+            var next = new CyclicBarrier(2);
+            var select = executor.submit(() -> {
+                next.await(5, TimeUnit.SECONDS);
+                try { addresses.setDefault(uid, first); return 200; }
+                catch (BusinessException failure) { return failure.getCode(); }
+            });
+            var delete = executor.submit(() -> { next.await(5, TimeUnit.SECONDS); addresses.delete(uid, first); return 200; });
+            assertThat(select.get(8, TimeUnit.SECONDS)).isIn(200, 404);
+            assertThat(delete.get(8, TimeUnit.SECONDS)).isEqualTo(200);
+            assertThat(addresses.list(uid).stream().filter(row -> row.isDefault()).count()).isLessThanOrEqualTo(1);
+        } finally { executor.shutdownNow(); }
+    }
+
+    @Test
+    void setDefaultVersusFullAddressUpdateSerializesOnSameUser() throws Exception {
+        register("default_update");
+        long uid = userMapper.findIncludingDeleted("default_update").getId();
+        long first = addresses.create(uid, addressDto(false)).id();
+        long second = addresses.create(uid, addressDto(false)).id();
+        var update = new com.xiaoke.user.dto.AddressUpdateDTO();
+        update.setId(first); update.setReceiverName("updated"); update.setReceiverPhone("1");
+        update.setDetailAddress("updated road"); update.setIsDefault(true);
+        var barrier = new CyclicBarrier(2);
+        var executor = Executors.newFixedThreadPool(2);
+        try {
+            var a = executor.submit(() -> { barrier.await(5, TimeUnit.SECONDS); return addresses.update(uid, update); });
+            var b = executor.submit(() -> { barrier.await(5, TimeUnit.SECONDS); addresses.setDefault(uid, second); return 200; });
+            assertThat(a.get(8, TimeUnit.SECONDS).receiverName()).isEqualTo("updated");
+            assertThat(b.get(8, TimeUnit.SECONDS)).isEqualTo(200);
+            assertThat(addresses.list(uid).stream().filter(row -> row.isDefault()).count()).isEqualTo(1);
+        } finally { executor.shutdownNow(); }
+    }
+
     private int oppositeUpdates(long first, long second, CyclicBarrier barrier) {
         try {
             transactions.execute(() -> {

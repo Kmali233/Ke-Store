@@ -3,6 +3,8 @@
 -- 版本：v1.0   更新日期：2026-10-10
 -- 数据库：MySQL 8.x   字符集：utf8mb4
 -- 说明：本脚本可重复执行（DROP + CREATE），请勿在生产环境直接运行。
+-- 历史参考：正常初始化/升级已改用 scripts/db_migrate.py；步骤见 sql/README.md。
+-- 不要对已有数据重跑此脚本。正式版本化结构位于 sql/migration/。
 -- 表清单（7 张）：
 --   t_user          用户表
 --   t_address       收货地址表

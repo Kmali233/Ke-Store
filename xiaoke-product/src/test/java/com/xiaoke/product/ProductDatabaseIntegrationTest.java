@@ -36,6 +36,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 @SpringBootTest(classes = ProductApplication.class, properties = {
         "spring.datasource.username=root", "spring.datasource.password=",
         "spring.datasource.driver-class-name=com.mysql.cj.jdbc.Driver",
+        "xiaoke.admin.enabled=true",
+        "xiaoke.admin.secret-base64=YWJjZGVmMDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODk=",
         "spring.datasource.hikari.connection-init-sql=SET SESSION innodb_lock_wait_timeout=3",
         "spring.datasource.hikari.maximum-pool-size=10",
         "xiaoke.local-admin-enabled=true", "xiaoke.local-admin-key=isolated-test-admin-key"})
@@ -53,6 +55,7 @@ class ProductDatabaseIntegrationTest {
     @Autowired ProductService products;
     @Autowired ProductAttrService attrs;
     @Autowired CategoryService categories;
+    @Autowired SkuService skuService;
     @Autowired LocalAdminProperties admin;
     @Autowired ConfigurableEnvironment environment;
     @Autowired org.mybatis.spring.SqlSessionTemplate sqlSession;
@@ -70,7 +73,7 @@ class ProductDatabaseIntegrationTest {
         jdbc = new JdbcTemplate(source);
     }
     @BeforeEach void reset() {
-        jdbc.update("DELETE FROM t_product_attr"); jdbc.update("DELETE FROM t_product"); jdbc.update("DELETE FROM t_category");
+        jdbc.update("DELETE FROM t_product_sku"); jdbc.update("DELETE FROM t_product_attr"); jdbc.update("DELETE FROM t_product"); jdbc.update("DELETE FROM t_category");
         environment.setActiveProfiles("dev"); admin.setLocalAdminEnabled(true); admin.setLocalAdminKey(KEY);
     }
     @AfterEach void cleanContext() { assertThat(MDC.get("traceId")).isNull(); }
@@ -86,7 +89,7 @@ class ProductDatabaseIntegrationTest {
         assertThat(page.get("total").asLong()).isEqualTo(1);
         assertThat(page.get("records").get(0).get("orderCount").asInt()).isZero();
         var detail = api("GET", "/product/" + id, null, 200);
-        assertThat(detail.size()).isEqualTo(11);
+        assertThat(detail.size()).isEqualTo(12);
         assertThat(detail.get("attrs").isEmpty()).isTrue();
         assertThat(detail.has("deleted")).isFalse(); assertThat(detail.has("sales")).isFalse();
         assertThat(detail.get("createTime").asText()).contains("T");
@@ -100,7 +103,7 @@ class ProductDatabaseIntegrationTest {
         assertThat(api("GET", "/product/" + id, null, 200).get("attrs")).isEqualTo(values);
         api("DELETE", "/product/" + id, null, 200);
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM t_product_attr WHERE deleted=0", Long.class)).isZero();
-        assertThat(jdbc.queryForObject("SELECT stock FROM t_product WHERE id=?", Integer.class, id)).isEqualTo(8);
+        assertThat(jdbc.queryForObject("SELECT stock FROM t_product_sku WHERE product_id=? AND is_default=1", Integer.class, id)).isEqualTo(8);
         api("DELETE", "/product/" + id, null, 404);
         api("DELETE", "/category/" + category, null, 200); api("DELETE", "/category/" + category, null, 404);
     }
@@ -391,7 +394,7 @@ class ProductDatabaseIntegrationTest {
         try (var blocker = source.getConnection()) {
             blocker.setAutoCommit(false);
             try (var statement = blocker.createStatement()) {
-                statement.executeUpdate("UPDATE t_product SET stock=9,sales=5 WHERE id=" + id);
+                statement.executeUpdate("UPDATE t_product_sku SET stock=9,sales=5 WHERE product_id=" + id);
                 var dto = new ProductUpdateDTO(); dto.setId(id); dto.setName("stale"); dto.setStock(10);
                 var update = pool.submit(() -> code(() -> products.updateProduct(dto)));
                 awaitDatabaseLockWait(); blocker.commit();
@@ -422,10 +425,47 @@ class ProductDatabaseIntegrationTest {
 
     @Test void negativeHistoricalCountersAreNotSilentlyReturnedOrRepaired() throws Exception {
         long id = product("bad", null);
-        jdbc.update("UPDATE t_product SET sales=-1 WHERE id=?", id);
+        jdbc.update("UPDATE t_product_sku SET sales=-1 WHERE product_id=? AND is_default=1", id);
         api("GET", "/product/" + id, null, 500);
         api("PUT", "/product", "{\"id\":" + id + ",\"name\":\"repair\"}", 500);
-        assertThat(jdbc.queryForObject("SELECT sales FROM t_product WHERE id=?", Integer.class, id)).isEqualTo(-1);
+        assertThat(jdbc.queryForObject("SELECT sales FROM t_product_sku WHERE product_id=? AND is_default=1", Integer.class, id)).isEqualTo(-1);
+    }
+
+    @Test void skuCombinationsNormalizeAndCannotBeDuplicatedOrReusedAfterDeletion() throws Exception {
+        long pid=product("phone",null);
+        var created=api("POST","/product/"+pid+"/skus","{\"name\":\"black256\",\"specs\":{\"颜色\":\" 黑色 \",\"容量\":\"256GB\"},\"price\":2.50,\"stock\":3}",200);
+        long sid=created.get("id").asLong();
+        api("POST","/product/"+pid+"/skus","{\"name\":\"dup\",\"specs\":{\"容量\":\"256GB\",\"颜色\":\"黑色\"},\"price\":2,\"stock\":1}",409);
+        api("PUT","/product/"+pid+"/skus/"+sid,"{\"stock\":99}",409);
+        api("PUT","/product/"+pid+"/skus/"+sid,"{\"price\":0.50}",200);
+        var detail=api("GET","/product/"+pid,null,200);
+        assertThat(detail.get("price").decimalValue()).isEqualByComparingTo("0.50");assertThat(detail.get("stock").asLong()).isEqualTo(13);
+        api("DELETE","/product/"+pid+"/skus/"+sid,null,200);
+        api("POST","/product/"+pid+"/skus","{\"name\":\"dup\",\"specs\":{\"容量\":\"256GB\",\"颜色\":\"黑色\"},\"price\":2,\"stock\":1}",409);
+        long defaultId=jdbc.queryForObject("SELECT id FROM t_product_sku WHERE product_id=? AND is_default=1",Long.class,pid);
+        api("DELETE","/product/"+pid+"/skus/"+defaultId,null,409);
+        api("PUT","/product/"+pid+"/skus/"+defaultId,"{\"specs\":{\"颜色\":\"黑\"}}",409);
+    }
+
+    @Test void skuManagementUsesLocalAdminAndChecksOwnershipAndSpecBoundaries() throws Exception {
+        long pid=product("p",null),other=product("q",null);
+        String route="/product/"+pid+"/skus";
+        String valid="{\"name\":\"n\",\"specs\":{\"颜色\":\"白色\"},\"price\":1,\"stock\":1}";
+        response(post(route).contentType(MediaType.APPLICATION_JSON).content(valid),401);
+        for(String specs:List.of("{}","{\"a\":null}","{\"a\":\" \"}","{\"a\":\"v\",\" a \":\"x\"}"))
+            api("POST",route,"{\"name\":\"n\",\"specs\":"+specs+",\"price\":1,\"stock\":1}",400);
+        var sku=api("POST",route,valid,200);
+        api("PUT","/product/"+other+"/skus/"+sku.get("id").asLong(),"{\"name\":\"x\"}",404);
+        api("PUT",route+"/"+sku.get("id").asLong(),"{\"status\":0}",200);
+        assertThat(api("GET","/product/"+pid,null,200).get("skus")).hasSize(1);
+    }
+
+    @Test void productAndDefaultSkuInsertAreAtomicOnRealSqlFailure() throws Exception {
+        jdbc.execute("CREATE TRIGGER fail_sku BEFORE INSERT ON t_product_sku FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='test-only sku failure'");
+        try{api("POST","/product","{\"name\":\"atomic\",\"price\":1,\"stock\":3}",500);}
+        finally{jdbc.execute("DROP TRIGGER fail_sku");}
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM t_product",Long.class)).isZero();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM t_product_sku",Long.class)).isZero();
     }
 
     private List<String> writeRoutes() {
@@ -450,7 +490,9 @@ class ProductDatabaseIntegrationTest {
         return insert("INSERT INTO t_category(name,parent_id) VALUES (?,?)", name, parent);
     }
     private long product(String name, Long category) {
-        return insert("INSERT INTO t_product(name,category_id,price,stock,sales) VALUES (?,?,1.00,10,4)", name, category);
+        long pid=insert("INSERT INTO t_product(name,category_id,price,stock,sales) VALUES (?,?,1.00,10,4)", name, category);
+        jdbc.update("INSERT INTO t_product_sku(product_id,name,spec_json,spec_hash,price,stock,sales,is_default) SELECT id,'default','{}',SHA2('{}',256),price,stock,sales,1 FROM t_product WHERE id=?",pid);
+        return pid;
     }
     private long insert(String sql, Object... values) {
         var keys = new GeneratedKeyHolder();
@@ -480,4 +522,31 @@ class ProductDatabaseIntegrationTest {
         }
         throw new AssertionError("The competing transaction never entered a real database lock wait");
     }
+    @Autowired com.xiaoke.common.auth.admin.AdminAuthentication backendAuthentication;
+    @Autowired com.xiaoke.common.auth.admin.AdminJwtService backendTokens;
+
+    @Test void readOnlyAdminAdapterUsesSharedRulesAndSeesRevocationImmediately() {
+        jdbc.update("DELETE FROM t_admin_account");
+        jdbc.update("INSERT INTO t_admin_account(id,username,password) VALUES(99,'ops_admin','unused-test-only')");
+        var principal = new com.xiaoke.common.auth.admin.AdminPrincipal(99, "ops_admin", 0);
+        String token = backendTokens.issue(principal);
+        assertThat(backendAuthentication.authenticate(token)).isEqualTo(principal);
+        jdbc.update("UPDATE t_admin_account SET status=0 WHERE id=99");
+        assertThatThrownBy(() -> backendAuthentication.authenticate(token)).isInstanceOf(BusinessException.class);
+        jdbc.update("UPDATE t_admin_account SET status=1,token_version=1 WHERE id=99");
+        assertThatThrownBy(() -> backendAuthentication.authenticate(token)).isInstanceOf(BusinessException.class);
+        String fresh = backendTokens.issue(new com.xiaoke.common.auth.admin.AdminPrincipal(99, "ops_admin", 1));
+        assertThat(backendAuthentication.authenticate(fresh).adminId()).isEqualTo(99);
+        jdbc.update("UPDATE t_admin_account SET deleted=1 WHERE id=99");
+        assertThatThrownBy(() -> backendAuthentication.authenticate(fresh)).isInstanceOf(BusinessException.class);
+        jdbc.update("DELETE FROM t_admin_account");
+        assertThatThrownBy(() -> backendAuthentication.authenticate(fresh)).isInstanceOf(BusinessException.class);
+    }
+
+    @Test void administratorAccountEndpointsBelongOnlyToAdminApplication() throws Exception {
+        for (String path : java.util.List.of("/admin/auth/me", "/admin/auth/login", "/admin/auth/logout")) {
+            assertThat(mvc.perform(get(path)).andReturn().getResponse().getStatus()).isEqualTo(404);
+        }
+    }
+
 }

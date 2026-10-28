@@ -26,6 +26,7 @@ public class ProductServiceImpl implements ProductService {
     private final CategoryChainPolicy chains;
     private final CatalogTransactions transactions;
     private final CatalogValidation validation;
+    private final SkuService skus;
 
     @Override
     public IPage<ProductVO> pageProducts(ProductQueryDTO query) {
@@ -69,6 +70,7 @@ public class ProductServiceImpl implements ProductService {
             BeanUtils.copyProperties(toVO(product), detail);
             detail.setAttrs(attrs.selectActiveByProductId(id).stream()
                     .map(row -> new ProductAttrVO(row.getAttrName(), row.getAttrValue(), row.getAttrGroup(), row.getSort())).toList());
+            detail.setSkus(skus.list(id,true));
             return detail;
         });
     }
@@ -85,6 +87,7 @@ public class ProductServiceImpl implements ProductService {
             row.setOrderCount(0);
             row.setDeleted(0);
             oneRow(products.insert(row));
+            skus.createDefault(row);
             return null;
         });
     }
@@ -96,8 +99,8 @@ public class ProductServiceImpl implements ProductService {
             Product before = requireActive(products.findIncludingDeleted(dto.getId()));
             var locked = chains.lockChains(before.getCategoryId(), dto.getCategoryId());
             Product row = lockStableProduct(before);
-            requireCounters(row);
-            if (dto.getStock() != null && !dto.getStock().equals(row.getStock())) {
+            var defaultSku=skus.lockDefault(row.getId());
+            if (dto.getStock() != null && !dto.getStock().equals(defaultSku.getStock())) {
                 throw new BusinessException(409, "不允许通过资料更新覆盖库存");
             }
             Product updated = new Product();
@@ -105,7 +108,7 @@ public class ProductServiceImpl implements ProductService {
             if (dto.getName() != null) { updated.setName(dto.getName()); }
             if (dto.getCategoryId() != null) { updated.setCategoryId(dto.getCategoryId()); }
             // 用数值比较，1 与 1.00 应是同一次幂等更新。
-            if (dto.getPrice() != null && dto.getPrice().compareTo(row.getPrice()) != 0) { updated.setPrice(dto.getPrice()); }
+            skus.updateDefault(defaultSku,dto.getPrice());
             if (dto.getImage() != null) { updated.setImage(dto.getImage()); }
             if (dto.getDescription() != null) { updated.setDescription(dto.getDescription()); }
             if (dto.getStatus() != null) { updated.setStatus(dto.getStatus()); }
@@ -144,16 +147,12 @@ public class ProductServiceImpl implements ProductService {
         return row;
     }
 
-    private void requireCounters(Product row) {
-        if (row.getStock() == null || row.getStock() < 0 || row.getOrderCount() == null || row.getOrderCount() < 0) {
-            throw new BusinessException(ResultCode.FAIL);
-        }
-    }
-
     private ProductVO toVO(Product row) {
-        requireCounters(row);
         ProductVO vo = new ProductVO();
         BeanUtils.copyProperties(row, vo);
+        var totals=skus.aggregate(row.getId());
+        if(totals.invalid()!=0 || totals.defaults()!=1) throw new BusinessException(500,"SKU计数或默认映射异常");
+        vo.setPrice(totals.price());vo.setStock(totals.stock());vo.setOrderCount(totals.sales());
         return vo;
     }
 

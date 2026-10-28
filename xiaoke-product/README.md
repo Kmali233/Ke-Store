@@ -1,8 +1,19 @@
 # 商品服务：当前接口契约与开发阅读顺序
 
-更新日期：2026-10-23。服务端口 8081，统一前缀 /api。业务表是 t_product、t_category、t_product_attr；没有新增表或生产依赖。本文件对应当前源码，outputs/13 中的旧“现状”只代表设计时点。
+更新日期：2026-10-28。服务端口8081，统一前缀/api。阶段03将现有t_product视为SPU，新增t_product_sku作为价格、库存和下单件数的交易权威；没有新增生产依赖。迁移、调用链和本轮证据见[阶段03详细实现说明](详细实现说明.md)。
 
-## 1. 十二个接口
+## 阶段03：SPU/SKU契约
+
+- 商品创建的原price/stock表示默认SKU初始价格/库存，创建SPU与默认SKU共用事务；旧PUT price只修改默认SKU价格，stock只能与默认SKU当前库存核对，不能覆盖库存。t_product的price/stock/sales仅保留切换前数据，不再作为交易权威或维护第二套计数。
+- 商品列表/详情的price是上架且未删除SKU的最低单价（包括库存0的上架SKU），stock是这些SKU库存之和，orderCount是所有SKU（含下架、软删）的未取消下单件数之和。聚合计数使用Long；无可售SKU时price=0、stock=0，由空skus列表表达不可购买，不用0元作为可购买判断。
+- 详情增加skus数组，返回上架未删除SKU，字段为id/productId/name/specs/price/stock/orderCount/image/status/defaultSku。库存0的SKU仍展示，选购页禁用它。SPU及分类可见性规则仍生效。
+- `POST /api/product/{pid}/skus`新增规格，输入name、specs、price、初始stock，image/status可选；成功data为SkuVO。`PUT /api/product/{pid}/skus/{id}`修改名称、规格、价格、图片或状态；stock仅核对。`DELETE /api/product/{pid}/skus/{id}`软删。三个接口均使用原有@LocalAdminOnly门禁，普通买家JWT不能管理SKU。
+- specs为1–5组名称/值，名称trim后1–30字符、值1–50字符，禁止控制字符和归一化后重复名称；按名称排序生成JSON/SHA-256，以商品＋摘要唯一约束防止重复组合。默认SKU的空规格仅系统生成，不允许修改其规格或删除默认SKU，可将它下架。
+- 删除SKU保留库存、下单件数和组合唯一约束，新下单不可用，旧订单取消仍能恢复该SKU。SKU图片null时下单快照使用商品图片。
+
+本地规格选择页：启动product后打开 `http://127.0.0.1:8081/api/sku-demo.html`。它能加载商品、选择SKU、查看独立价格/库存、使用skuId提交订单并保留重试键。订单服务需将该页面的精确来源加入`xiaoke.web.allowed-origins`，例如启动时增加 `--xiaoke.web.allowed-origins=http://127.0.0.1:8081`。公共CORS允许Idempotency-Key；不放开任意来源。凭证仅在页面内存中使用。
+
+## 1. 原有十二个接口（另增加上述三个SKU管理接口）
 
 所有成功响应都是 HTTP 200、{"code":200,"message":"操作成功","data":...}。错误的 HTTP 状态与 code 相等，data=null。
 
@@ -21,7 +32,7 @@
 | PUT /category | 本地管理 | CategoryUpdateDTO，body.id 必填 | null |
 | DELETE /category/{id} | 本地管理 | 正数 Long 路径 id | null |
 
-公开 GET 忽略无效或过期 Authorization。七个写接口使用 common 的 @LocalAdminOnly，不使用买家 JWT 授予管理权限。管理默认关闭：403；显式 dev、IPv4 本机、服务端密钥齐全且开关开启后，缺失或错误请求密钥：401。
+公开GET忽略无效或过期Authorization。十个写接口使用common的@LocalAdminOnly，不使用买家JWT授予管理权限。管理默认关闭403；显式dev、IPv4本机、服务端密钥齐全且开关开启后，缺失或错误请求密钥401。以下原有字段说明中的price/stock在阶段03均按上述默认SKU写入与SKU聚合读取契约解释。
 
 ## 2. 输入与返回
 

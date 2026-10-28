@@ -7,11 +7,13 @@ public final class OrderItemRules {
     private OrderItemRules() { }
     public static List<OrderItem> checked(Orders order,List<OrderItem> items) {
         if (items==null || items.isEmpty() || items.size()>20) { throw broken(); }
-        var ids=new HashSet<Long>();
+        var ids=new HashSet<String>();
         for (var item:items) {
             if (item==null || !Objects.equals(item.getOrderId(),order.getId()) || !Objects.equals(item.getOrderNo(),order.getOrderNo())
                     || !Integer.valueOf(0).equals(item.getDeleted()) || item.getProductId()==null || item.getProductId()<=0
-                    || !ids.add(item.getProductId()) || item.getQuantity()==null || item.getQuantity()<1 || item.getQuantity()>999
+                    || !ids.add(item.getSkuId()==null?"p"+item.getProductId():"s"+item.getSkuId())
+                    || (item.getSkuId()!=null && (item.getSkuId()<=0 || item.getSkuName()==null || item.getSkuSpec()==null))
+                    || item.getQuantity()==null || item.getQuantity()<1 || item.getQuantity()>999
                     || item.getProductName()==null || item.getProductName().isBlank()) { throw broken(); }
             OrderMoney.amount(item.getPrice(),item.getQuantity(),500);
         }

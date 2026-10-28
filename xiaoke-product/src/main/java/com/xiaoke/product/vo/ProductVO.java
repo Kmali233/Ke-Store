@@ -15,8 +15,8 @@ public class ProductVO {
     private String name;
     private Long categoryId;
     private BigDecimal price;
-    private Integer stock;
-    private Integer orderCount;
+    private Long stock;
+    private Long orderCount;
     private String image;
     private String description;
     private Integer status;
