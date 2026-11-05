@@ -85,3 +85,73 @@ CREATE TABLE `t_admin_account` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_admin_username` (`username`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='独立后台身份与令牌撤销版本';
+
+CREATE TABLE `t_admin_role` (
+  `id` bigint NOT NULL,
+  `code` varchar(50) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `name` varchar(100) NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `code` (`code`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE `t_admin_permission` (
+  `code` varchar(80) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `name` varchar(100) NOT NULL,
+  PRIMARY KEY (`code`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE `t_admin_role_permission` (
+  `role_id` bigint NOT NULL,
+  `permission_code` varchar(80) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  CONSTRAINT `fk_rp_permission` FOREIGN KEY (`permission_code`) REFERENCES `t_admin_permission` (`code`),
+  CONSTRAINT `fk_rp_role` FOREIGN KEY (`role_id`) REFERENCES `t_admin_role` (`id`),
+  KEY `fk_rp_permission` (`permission_code`),
+  PRIMARY KEY (`role_id`,`permission_code`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE `t_admin_account_role` (
+  `admin_id` bigint NOT NULL,
+  `role_id` bigint NOT NULL,
+  CONSTRAINT `fk_ar_account` FOREIGN KEY (`admin_id`) REFERENCES `t_admin_account` (`id`),
+  CONSTRAINT `fk_ar_role` FOREIGN KEY (`role_id`) REFERENCES `t_admin_role` (`id`),
+  KEY `idx_ar_role` (`role_id`,`admin_id`),
+  PRIMARY KEY (`admin_id`,`role_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE `t_admin_audit` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `event_key` varchar(128) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `actor_type` varchar(10) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `actor_id` bigint DEFAULT NULL,
+  `action` varchar(40) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `target_type` varchar(20) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `target_id` varchar(20) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `result` varchar(10) CHARACTER SET ascii COLLATE ascii_bin NOT NULL DEFAULT 'SUCCESS',
+  `changes_json` json NOT NULL,
+  `trace_id` char(32) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `source` varchar(50) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `created_at` datetime(6) NOT NULL,
+  `payload_sha256` char(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  CONSTRAINT `ck_audit_actor` CHECK ((((`actor_type` = _utf8mb4'ADMIN') and (`actor_id` is not null) and (`actor_id` > 0)) or ((`actor_type` = _utf8mb4'SYSTEM') and (`actor_id` is null)))),
+  CONSTRAINT `ck_audit_result` CHECK ((`result` = _utf8mb4'SUCCESS')),
+  KEY `idx_audit_actor` (`actor_id`,`created_at`,`id`),
+  KEY `idx_audit_target` (`target_type`,`target_id`,`created_at`,`id`),
+  KEY `idx_audit_time` (`created_at`,`id`),
+  KEY `idx_audit_trace` (`trace_id`),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_audit_event` (`event_key`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='管理操作成功审计，时间为UTC，非不可篡改存储';
+
+INSERT INTO t_admin_role(id,code,name) VALUES
+ (1,'system_admin','系统管理员'),(2,'product_admin','商品管理员'),
+ (3,'fulfillment','履约人员'),(4,'after_sales','售后人员');
+INSERT INTO t_admin_permission(code,name) VALUES
+ ('admin:manage','后台账号与角色管理'),('product:write','商品及分类维护'),
+ ('inventory:adjust','库存调整'),('order:ship','订单发货'),('refund:review','退款审核');
+INSERT INTO t_admin_role_permission(role_id,permission_code)
+ SELECT 1,code FROM t_admin_permission;
+INSERT INTO t_admin_role_permission(role_id,permission_code) VALUES
+ (2,'product:write'),(3,'inventory:adjust'),(3,'order:ship'),(4,'refund:review');
+
+INSERT INTO t_admin_permission(code,name) VALUES('audit:read','管理审计查询');
+INSERT INTO t_admin_role_permission(role_id,permission_code) VALUES(1,'audit:read');

@@ -11,6 +11,8 @@ import com.xiaoke.order.mapper.*;
 import com.xiaoke.order.vo.OrderCreateVO;
 import com.xiaoke.order.idempotency.OrderIdempotency;
 import lombok.RequiredArgsConstructor;
+import com.xiaoke.audit.*;
+import static com.xiaoke.audit.AuditChanges.Field.*;
 import org.springframework.stereotype.Service;
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -30,6 +32,7 @@ public class OrderTransactionService {
     private final OrderNoAllocator allocator;
     private final OrderIdempotency idempotency;
     private final OrderSkus skus;
+    private final AuditWriter audit;
     public List<Long> productIds(OrderCreateDTO dto) {
         return skus.resolve(dto.getItems()).stream().map(OrderSkus.Selection::productId).distinct().sorted().toList();
     }
@@ -96,6 +99,7 @@ public class OrderTransactionService {
             var order=requireOrder(orders.lockByNo(no)); var status=status(order);
             if ((status!=OrderStatus.PAID && status!=OrderStatus.PREPARING)
                     || orders.casShip(order.getId(),dto.getLogisticsCompany(),dto.getTrackingNo())!=1) { throw conflict(); }
+            audit.record(AuditAction.ORDER_SHIP,no,AuditChanges.start().put(STATUS,order.getStatus(),3));
             return null;
         });
     }

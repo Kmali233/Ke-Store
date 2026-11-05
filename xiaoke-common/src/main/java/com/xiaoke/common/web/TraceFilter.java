@@ -19,6 +19,7 @@ import java.util.UUID;
 @Component    // 表示这是需要 Spring 管理的组件
 @Order(Ordered.HIGHEST_PRECEDENCE + 1)
 public class TraceFilter extends OncePerRequestFilter {
+    // 一次请求的编号
     public static final String HEADER = "X-Trace-Id";
 
 

@@ -6,6 +6,7 @@
     <name>xiaoke-order</name>
     <description>订单服务：同库事务、订单快照与库存联动</description>
     <dependencies>
+        <dependency><groupId>com.xiaoke</groupId><artifactId>xiaoke-audit</artifactId></dependency>
         <dependency><groupId>com.xiaoke</groupId><artifactId>xiaoke-common</artifactId></dependency>
         <dependency><groupId>com.mysql</groupId><artifactId>mysql-connector-j</artifactId><scope>runtime</scope></dependency>
     </dependencies>

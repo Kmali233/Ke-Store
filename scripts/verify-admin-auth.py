@@ -49,7 +49,7 @@ class AdminVerification(previous.SkuVerification):
         db.migrate(log=self.out / 'http-database-migrate.log')
         db.flyway('validate', log=self.out / 'http-database-validate.log')
         assert db.query('SELECT version,success FROM flyway_schema_history ORDER BY installed_rank') == [
-            {'version': str(v), 'success': '1'} for v in (1, 2, 3, 4)]
+            {'version': str(v), 'success': '1'} for v in (1, 2, 3, 4, 5, 6)]
         self.record('http_only_fresh_flyway_database_and_explicit_jar_reuse', maven_executed=False)
         self.verify_module_ownership()
 
@@ -69,7 +69,7 @@ class AdminVerification(previous.SkuVerification):
 
     def provision(self, mode='create', expected=0):
         env = os.environ.copy()
-        env.update({'DB_HOST': '127.0.0.1', 'DB_PORT': str(self.port), 'DB_NAME': self.schemas['order'],
+        env.update({'XIAOKE_SECURITY_AUDIT_DIR':str(self.out / 'security'), 'DB_HOST': '127.0.0.1', 'DB_PORT': str(self.port), 'DB_NAME': self.schemas['order'],
                     'DB_USERNAME': 'root', 'DB_PASSWORD': '', 'XIAOKE_JWT_SECRET_BASE64': self.buyer_secret,
                     'XIAOKE_ADMIN_JWT_SECRET_BASE64': self.admin_secret,
                     'XIAOKE_ADMIN_PROVISION_ENABLED': 'true', 'XIAOKE_ADMIN_PROVISION_MODE': mode,
@@ -147,13 +147,13 @@ class AdminVerification(previous.SkuVerification):
             self.call(app, 'GET', '/admin/auth/me', expected=401)
         self.call('user', 'GET', '/user/me', token=token, expected=401)
         self.call('order_a', 'GET', '/order/page', token=token, expected=401)
-        self.call('product', 'POST', '/product', {}, token=token, expected=401)
-        self.call('order_a', 'POST', '/order/20260101000001/ship', {}, token=token, expected=401)
+        self.call('product', 'POST', '/product', {}, token=token, expected=400)
+        self.call('order_a', 'POST', '/order/20260101000001/ship', {}, token=token, expected=400)
         for app in ('user', 'product', 'order_a', 'order_b'):
             for method, path in (('GET','/admin/auth/me'),('POST','/admin/auth/login'),('POST','/admin/auth/logout')):
                 self.call(app, method, path, token=token, expected=404)
         self.call('admin', 'GET', '/user/me', token=self.tokens[0], expected=404)
-        self.record('admin_routes_owned_exclusively_by_independent_module', business_write_gate_preserved=True)
+        self.record('admin_routes_owned_exclusively_by_independent_module', business_writes_use_rbac=True)
         results = self.race([lambda: self.call('admin', 'POST', '/admin/auth/logout', token=token, expected=(200,401))
                              for _ in range(self.workers)])
         assert sum(code == 200 for code, _ in results) == 1
@@ -181,6 +181,7 @@ class AdminVerification(previous.SkuVerification):
         for app in ('admin',):
             self.call(app, 'GET', '/admin/auth/me', token=fresh, expected=401)
         self.sql('UPDATE t_admin_account SET deleted=0,token_version=token_version+1 WHERE id=1')
+        self.refresh_management_token()
         self.record('disable_recovery_and_deletion_revoke_administrator_identity', recovery_does_not_enable=True)
 
     def real_service_failures(self):
@@ -234,7 +235,7 @@ class AdminVerification(previous.SkuVerification):
     def audit_logs(self):
         super().audit_logs()
         credentials = [self.admin_secret, *self.admin_passwords, self.buyer_secret, *self.admin_tokens]
-        for file in self.out.glob('*.log'):
+        for file in self.out.rglob('*.log'):
             content = file.read_text(encoding='utf-8', errors='replace')
             assert not any(secret in content for secret in credentials), ('admin credential in logs', file.name)
         self.record('admin_credentials_not_in_logs', checked_logs=len(list(self.out.glob('*.log'))))

@@ -1,6 +1,8 @@
 # 小Ke商城（xiaoke-mall）
 
-阶段04后台认证采用独立 `xiaoke-admin` Maven模块，默认端口8085（保留原AI端口8084），统一拥有 `/api/admin/auth/login`、`/me`、`/logout` 及离线账号初始化/恢复。user只承载买家业务；common仅保留共享认证规则与只读查询契约；product/order通过各自适配器读取共享MySQL中的最小账号状态。先迁移V4，再为admin注入独立后台密钥。配置、调用链、迁移兼容和本轮验收结果见[后台管理员认证详细实现说明](xiaoke-admin/详细实现说明.md)，完整验收入口为 `python scripts/verify-admin-auth.py`。现有商品写接口和订单发货仍使用本地管理门禁，阶段05再实现角色授权。
+阶段06管理审计由普通JAR模块 `xiaoke-audit` 提供，admin/product/order复用：成功事件与业务同事务写MySQL，失败访问及敏感读取进入独立滚动安全日志；admin提供 `GET /api/admin/audit/page`，要求 `audit:read`。先迁移至V6。详见[管理操作审计详细实现说明](../基础模块后阶段计划/06-管理操作审计模块/详细实现说明.md)，完整隔离验收命令为 `python scripts/verify-admin-audit.py`。
+
+阶段05后台角色权限已在独立 `xiaoke-admin` 模块实现：四类初始角色、固定权限码、账号创建/禁用/启用、角色整体替换；商品与分类的十个写入口要求后台JWT及 `product:write`，订单发货要求 `order:ship`。角色阶段使用V5，当前部署需迁移至V6，再启用product/order后台认证并配置与admin一致的独立后台密钥。详见[后台角色权限详细实现说明](xiaoke-admin/详细实现说明.md)，完整隔离验收入口为 `python scripts/verify-admin-rbac.py`。阶段04认证记录保留在[历史说明](xiaoke-admin/docs/阶段04-后台管理员认证实现说明.md)。
 
 阶段03已增加SPU/SKU规格：商品详情返回独立SKU价格/库存；新订单使用skuId并保存规格快照；旧productId请求映射默认SKU，历史订单和v1幂等键继续兼容。部署前停止旧product/order写进程，通过迁移入口完成V3及默认SKU回填。接口与边界见[商品规格详细实现说明](xiaoke-product/详细实现说明.md)，完整验收入口为 `python scripts/verify-skus.py`。本地规格选择页为product服务的 `/api/sku-demo.html`。
 
@@ -228,7 +230,7 @@ xiaoke-mall/                          # 父工程 (packaging=pom)：聚合子模
 
 订单服务使用与user相同的数据库和 `XIAOKE_JWT_SECRET_BASE64`，启动 `OrderApplication` 或构建后运行 `java -jar xiaoke-order/target/xiaoke-order-1.0.0.jar`，端口8082。创建订单前启动product，`PRODUCT_BASE_URL` 在dev默认 `http://127.0.0.1:8081/api`，prod必须显式配置。
 
-订单接口为 `POST /api/order`、`GET /api/order/idempotency/{key}`、`GET /api/order/page`、`GET /api/order/{orderNo}`、`GET /api/order/{orderNo}/status`、`POST /api/order/{orderNo}/pay`、`POST /api/order/{orderNo}/ship`、`POST /api/order/{orderNo}/cancel`。七个买家接口使用原始JWT；ship使用本地管理门禁。完整契约、收货二选一、库存事务和阅读顺序见 [xiaoke-order/README.md](xiaoke-order/README.md)。
+订单接口为 `POST /api/order`、`GET /api/order/idempotency/{key}`、`GET /api/order/page`、`GET /api/order/{orderNo}`、`GET /api/order/{orderNo}/status`、`POST /api/order/{orderNo}/pay`、`POST /api/order/{orderNo}/ship`、`POST /api/order/{orderNo}/cancel`。七个买家接口使用原始JWT；ship使用后台JWT及 `order:ship` 权限。完整契约、收货二选一、库存事务和阅读顺序见 [xiaoke-order/README.md](xiaoke-order/README.md)。
 
 订单快照、库存扣减/恢复和下单件数使用同库事务；order通过自有适配Mapper访问关联表，不依赖user/product业务jar。阶段02支持 `Idempotency-Key`：同用户同键同内容返回首次创建结果，同键异参409；旧客户端不带键仍可能创建多单。需先应用V2迁移，键永久保留。模拟支付/取消不涉及真实资金。实现与验收见 [详细实现说明](xiaoke-order/详细实现说明.md)。
 
@@ -236,7 +238,7 @@ xiaoke-mall/                          # 父工程 (packaging=pom)：聚合子模
 
 **多服务启动**
 
-2026-10-23：商品模块五个 GET 公开，七个管理写接口默认返回403。仅本机开发需要写操作时，显式设置 `SPRING_PROFILES_ACTIVE=dev`、`LOCAL_ADMIN_KEY` 并开启 `xiaoke.local-admin-enabled=true`（环境变量 `XIAOKE_LOCAL_ADMIN_ENABLED=true`），请求携带 `X-Local-Admin-Key`。门禁还要求未激活 prod、监听与直接来源均为 IPv4 `127.0.0.1`。未来新增管理接口同样必须标注 `@LocalAdminOnly`。
+2026-10-29：商品公开GET保持公开；十个商品/分类/SKU写入口和订单发货已切换为 `@AdminPermission`。请求头为 `Authorization: <原始后台JWT>`，不接受买家JWT或本地管理密钥代替授权。缺失/无效身份401，已登录但缺权限403。product/order需设置 `XIAOKE_ADMIN_AUTH_ENABLED=true` 和 `XIAOKE_ADMIN_JWT_SECRET_BASE64`；admin始终启用后台认证。`LocalAdminOnly` 只保留为隔离开发工具能力，现有业务管理入口不使用它。
 
 - **IDEA**：Reload 父工程后，每个服务的 `*Application` 各生成一条运行配置，可分别或同时启动。
 - **命令行**：单服务启动 `mvn -pl xiaoke-product spring-boot:run`；全部构建 `mvn clean install`；jar 启动 `java -jar xiaoke-product/target/xiaoke-product-1.0.0.jar`。

@@ -1,0 +1,16 @@
+package com.xiaoke.audit;
+
+/** 定义动作名称及对象类型，如商品改价、订单发货
+ * 业务 Service 调用 audit.record(...) 时选择动作 */
+public enum AuditAction {
+    PRODUCT_CREATE("PRODUCT"), PRODUCT_UPDATE("PRODUCT"), PRODUCT_DELETE("PRODUCT"),
+    PRODUCT_PRICE_CHANGE("PRODUCT"), PRODUCT_STATUS_CHANGE("PRODUCT"), PRODUCT_ATTR_REPLACE("PRODUCT"),
+    CATEGORY_CREATE("CATEGORY"), CATEGORY_UPDATE("CATEGORY"), CATEGORY_DELETE("CATEGORY"),
+    SKU_CREATE("SKU"), SKU_UPDATE("SKU"), SKU_DELETE("SKU"), SKU_PRICE_CHANGE("SKU"), SKU_STATUS_CHANGE("SKU"),
+    ADMIN_CREATE("ADMIN_ACCOUNT"), ADMIN_ROLES_CHANGE("ADMIN_ACCOUNT"), ADMIN_STATUS_CHANGE("ADMIN_ACCOUNT"),
+    ADMIN_CREDENTIAL_RECOVER("ADMIN_ACCOUNT"),
+    ORDER_SHIP("ORDER"), INVENTORY_ADJUST("SKU"), REFUND_REVIEW("ORDER");
+    private final String target;
+    AuditAction(String target) { this.target=target; }
+    public String target() { return target; }
+}

@@ -18,6 +18,8 @@ public class CatalogValidation {
         if (id == null || id <= 0) { throw new BusinessException(ResultCode.PARAM_ERROR); }
     }
     public static void oneRow(int count) {
-        if (count != 1) { throw new BusinessException(ResultCode.FAIL); }
+        if (count != 1) {
+            throw new BusinessException(ResultCode.FAIL);
+        }
     }
 }

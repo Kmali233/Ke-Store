@@ -6,6 +6,8 @@ import com.xiaoke.product.dto.SkuInput;
 import com.xiaoke.product.entity.*;
 import com.xiaoke.product.mapper.*;
 import com.xiaoke.product.vo.SkuVO;
+import com.xiaoke.audit.*;
+import static com.xiaoke.audit.AuditChanges.Field.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
@@ -22,6 +24,7 @@ public class SkuService {
     private final CatalogTransactions transactions;
     private final CatalogValidation validation;
     private final ObjectMapper json;
+    private final AuditWriter audit;
 
     public void createDefault(Product product) {
         var row=new ProductSku();row.setProductId(product.getId());row.setName("默认规格");row.setSpecJson("{}");
@@ -38,7 +41,13 @@ public class SkuService {
         counters(row);return row;
     }
     public void updateDefault(ProductSku row,java.math.BigDecimal price) {
-        if(price!=null && price.compareTo(row.getPrice())!=0) {row.setPrice(price);oneRow(skus.update(row));}
+        /** 更新默认SKU的价格 */
+        if(price!=null && price.compareTo(row.getPrice())!=0) {
+            // 把内存中这个 SKU 对象的价格改掉。
+            row.setPrice(price);
+            // 通过 Mapper 执行数据库更新。
+            oneRow(skus.update(row));
+        }
     }
     public SkuVO create(Long pid,SkuInput dto) {
         check(dto,true);
@@ -46,13 +55,18 @@ public class SkuService {
             product(pid);var row=new ProductSku();row.setProductId(pid);row.setName(dto.getName());
             row.setSpecJson(specs(dto.getSpecs()));row.setSpecHash(hash(row.getSpecJson()));row.setPrice(dto.getPrice());
             row.setStock(dto.getStock());row.setSales(0);row.setImage(dto.getImage());row.setStatus(dto.getStatus()==null?1:dto.getStatus());
-            row.setIsDefault(0);oneRow(skus.insert(row));return view(row);
+            row.setIsDefault(0);oneRow(skus.insert(row));
+            audit.record(AuditAction.SKU_CREATE,row.getId(),AuditChanges.start().put(PRICE,null,row.getPrice())
+                    .put(STOCK,null,row.getStock()).put(STATUS,null,row.getStatus()));
+            return view(row);
         }));
     }
     public void update(Long pid,Long id,SkuInput dto) {
         check(dto,false);validation.id(id);
         unique(()->transactions.write(()->{
             product(pid);var row=owned(pid,id);counters(row);
+            var oldPrice=row.getPrice(); var oldStatus=row.getStatus();
+            var oldProfile=Arrays.asList(row.getName(),row.getImage(),row.getSpecJson());
             if(dto.getStock()!=null && !dto.getStock().equals(row.getStock())) throw new BusinessException(409,"不允许通过资料更新覆盖SKU库存");
             if(dto.getName()!=null) row.setName(dto.getName());
             if(dto.getPrice()!=null) row.setPrice(dto.getPrice());
@@ -62,14 +76,19 @@ public class SkuService {
                 if(row.getIsDefault()==1) throw new BusinessException(409,"默认SKU规格不可修改");
                 row.setSpecJson(specs(dto.getSpecs()));row.setSpecHash(hash(row.getSpecJson()));
             }
-            oneRow(skus.update(row));return null;
+            oneRow(skus.update(row));
+            audit.record(AuditAction.SKU_PRICE_CHANGE,id,AuditChanges.start().put(PRICE,oldPrice,row.getPrice()));
+            audit.record(AuditAction.SKU_STATUS_CHANGE,id,AuditChanges.start().put(STATUS,oldStatus,row.getStatus()));
+            audit.record(AuditAction.SKU_UPDATE,id,AuditChanges.start().profile(!oldProfile.equals(Arrays.asList(row.getName(),row.getImage(),row.getSpecJson()))));
+            return null;
         }));
     }
     public void delete(Long pid,Long id) {
         validation.id(id);transactions.write(()->{
             product(pid);var row=owned(pid,id);
             if(row.getIsDefault()==1) throw new BusinessException(409,"默认SKU不可删除，可下架");
-            oneRow(skus.delete(pid,id));return null;
+            oneRow(skus.delete(pid,id));
+            audit.record(AuditAction.SKU_DELETE,id,AuditChanges.start().put(DELETED,0,1));return null;
         });
     }
     private Product product(Long pid) {

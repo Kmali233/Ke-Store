@@ -24,11 +24,11 @@ class IdempotencyVerification(migrations.MigrationVerification):
         super().build()
         db = self.database('order')
         history = db.query('SELECT version,success FROM flyway_schema_history ORDER BY installed_rank')
-        assert history == [{'version': str(v), 'success': '1'} for v in (1,2,3,4)]
+        assert history == [{'version': str(v), 'success': '1'} for v in (1,2,3,4,5,6)]
         assert db.query('SELECT version FROM t_catalog_migration') == [{'version':'3'}]
         db.migrate(log=self.out / 'stage02-repeat-migration.log')
         assert db.query('SELECT version,success FROM flyway_schema_history ORDER BY installed_rank') == history
-        self.record('current_flyway_migration_and_repeat', versions=['1', '2', '3', '4'], receipt_table_empty=True)
+        self.record('current_flyway_migration_and_repeat', versions=['1', '2', '3', '4', '5', '6'], receipt_table_empty=True)
 
     def keyed(self, app, body, key, buyer=0, expected=200):
         return self.call(app, 'POST', '/order', body, self.tokens[buyer], expected=expected,

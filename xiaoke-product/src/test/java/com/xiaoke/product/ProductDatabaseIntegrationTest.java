@@ -56,6 +56,7 @@ class ProductDatabaseIntegrationTest {
     @Autowired ProductAttrService attrs;
     @Autowired CategoryService categories;
     @Autowired SkuService skuService;
+    @Autowired com.xiaoke.common.auth.admin.AdminJwtService adminJwt;
     @Autowired LocalAdminProperties admin;
     @Autowired ConfigurableEnvironment environment;
     @Autowired org.mybatis.spring.SqlSessionTemplate sqlSession;
@@ -73,7 +74,12 @@ class ProductDatabaseIntegrationTest {
         jdbc = new JdbcTemplate(source);
     }
     @BeforeEach void reset() {
+        jdbc.update("DELETE FROM t_admin_audit");
         jdbc.update("DELETE FROM t_product_sku"); jdbc.update("DELETE FROM t_product_attr"); jdbc.update("DELETE FROM t_product"); jdbc.update("DELETE FROM t_category");
+        jdbc.update("DELETE FROM t_admin_account_role");
+        jdbc.update("DELETE FROM t_admin_account");
+        jdbc.update("INSERT INTO t_admin_account(id,username,password) VALUES(1,'test_admin','unused-test-only')");
+        jdbc.update("INSERT INTO t_admin_account_role(admin_id,role_id) VALUES(1,1)");
         environment.setActiveProfiles("dev"); admin.setLocalAdminEnabled(true); admin.setLocalAdminKey(KEY);
     }
     @AfterEach void cleanContext() { assertThat(MDC.get("traceId")).isNull(); }
@@ -108,7 +114,7 @@ class ProductDatabaseIntegrationTest {
         api("DELETE", "/category/" + category, null, 200); api("DELETE", "/category/" + category, null, 404);
     }
 
-    @Test void sevenWritesEnforceAdminGateBeforeInputParsing() throws Exception {
+    @Test void managementWritesRequireJwtBeforeInputParsing() throws Exception {
         for (int mode = 0; mode < 5; mode++) {
             environment.setActiveProfiles(mode == 1 ? new String[]{"prod"} : mode == 2 ? new String[]{"dev", "prod"} : new String[]{"dev"});
             admin.setLocalAdminEnabled(mode != 0); admin.setLocalAdminKey(mode == 3 ? "" : KEY);
@@ -116,7 +122,7 @@ class ProductDatabaseIntegrationTest {
                 var parts = route.split(" ", 2);
                 var req = request(HttpMethod.valueOf(parts[0]), parts[1]).contentType(MediaType.APPLICATION_JSON).content("{broken");
                 if (mode == 4) { req.with(r -> { r.setRemoteAddr("::1"); return r; }); }
-                response(req, 403);
+                response(req, 401);
             }
         }
         environment.setActiveProfiles("dev"); admin.setLocalAdminEnabled(true); admin.setLocalAdminKey(KEY);
@@ -181,7 +187,7 @@ class ProductDatabaseIntegrationTest {
         api("POST", "/category", "{\"name\":\"x\",\"parentId\":-1}", 400);
         api("POST", "/category", "{\"name\":\"x\",\"status\":true}", 400);
         api("POST", "/category", "{\"name\":\"x\",\"status\":2}", 400);
-        response(post("/product").header("X-Local-Admin-Key", KEY).contentType(MediaType.TEXT_PLAIN).content("x"), 415);
+        response(post("/product").header("Authorization", adminToken()).contentType(MediaType.TEXT_PLAIN).content("x"), 415);
         api("PATCH", "/product", "{}", 405); api("GET", "/unknown/resource", null, 404);
         api("POST", "/product", "{\"name\":\"" + "x".repeat(1048577) + "\"}", 413);
     }
@@ -447,7 +453,7 @@ class ProductDatabaseIntegrationTest {
         api("PUT","/product/"+pid+"/skus/"+defaultId,"{\"specs\":{\"颜色\":\"黑\"}}",409);
     }
 
-    @Test void skuManagementUsesLocalAdminAndChecksOwnershipAndSpecBoundaries() throws Exception {
+    @Test void skuManagementUsesPermissionsAndChecksOwnershipAndSpecBoundaries() throws Exception {
         long pid=product("p",null),other=product("q",null);
         String route="/product/"+pid+"/skus";
         String valid="{\"name\":\"n\",\"specs\":{\"颜色\":\"白色\"},\"price\":1,\"stock\":1}";
@@ -473,7 +479,7 @@ class ProductDatabaseIntegrationTest {
                 "POST /category", "PUT /category", "DELETE /category/1");
     }
     private JsonNode api(String method, String path, String body, int expected) throws Exception {
-        var req = request(HttpMethod.valueOf(method), path).header("X-Local-Admin-Key", KEY).header("Authorization", "invalid-expired-token");
+        var req = request(HttpMethod.valueOf(method), path).header("Authorization", adminToken());
         if (body != null) { req.contentType(MediaType.APPLICATION_JSON).content(body); }
         return response(req, expected).get("data");
     }
@@ -526,6 +532,7 @@ class ProductDatabaseIntegrationTest {
     @Autowired com.xiaoke.common.auth.admin.AdminJwtService backendTokens;
 
     @Test void readOnlyAdminAdapterUsesSharedRulesAndSeesRevocationImmediately() {
+        jdbc.update("DELETE FROM t_admin_account_role");
         jdbc.update("DELETE FROM t_admin_account");
         jdbc.update("INSERT INTO t_admin_account(id,username,password) VALUES(99,'ops_admin','unused-test-only')");
         var principal = new com.xiaoke.common.auth.admin.AdminPrincipal(99, "ops_admin", 0);
@@ -539,6 +546,7 @@ class ProductDatabaseIntegrationTest {
         assertThat(backendAuthentication.authenticate(fresh).adminId()).isEqualTo(99);
         jdbc.update("UPDATE t_admin_account SET deleted=1 WHERE id=99");
         assertThatThrownBy(() -> backendAuthentication.authenticate(fresh)).isInstanceOf(BusinessException.class);
+        jdbc.update("DELETE FROM t_admin_account_role");
         jdbc.update("DELETE FROM t_admin_account");
         assertThatThrownBy(() -> backendAuthentication.authenticate(fresh)).isInstanceOf(BusinessException.class);
     }
@@ -549,4 +557,59 @@ class ProductDatabaseIntegrationTest {
         }
     }
 
+    private String adminToken() {
+        return adminJwt.issue(new com.xiaoke.common.auth.admin.AdminPrincipal(1,"test_admin",0));
+    }
+
+    @Test void allManagementRoutesUseTheFourRoleMatrixAndRevokeExistingToken() throws Exception {
+        var routes=new ArrayList<>(writeRoutes());
+        routes.addAll(List.of("POST /product/1/skus","PUT /product/1/skus/1","DELETE /product/1/skus/1"));
+        String token=adminToken();
+        for(long role:List.of(1L,2L,3L,4L)) {
+            jdbc.update("DELETE FROM t_admin_account_role WHERE admin_id=1");
+            jdbc.update("INSERT INTO t_admin_account_role(admin_id,role_id) VALUES(1,?)",role);
+            for(String route:routes) {
+                var parts=route.split(" ",2);
+                var req=request(HttpMethod.valueOf(parts[0]),parts[1]).header("Authorization",token);
+                if(!parts[0].equals("DELETE")) req.contentType(MediaType.APPLICATION_JSON).content("{broken");
+                response(req,role<=2?(parts[0].equals("DELETE")?404:400):403);
+            }
+        }
+        environment.setActiveProfiles("prod");
+        admin.setLocalAdminEnabled(false);
+        jdbc.update("DELETE FROM t_admin_account_role WHERE admin_id=1");
+        jdbc.update("INSERT INTO t_admin_account_role(admin_id,role_id) VALUES(1,2)");
+        response(post("/product").header("Authorization",token).with(r -> {r.setRemoteAddr("192.0.2.10"); return r;})
+                .contentType(MediaType.APPLICATION_JSON).content("{broken"),400);
+        jdbc.update("DELETE FROM t_admin_account_role WHERE admin_id=1");
+        response(post("/product").header("Authorization",token).contentType(MediaType.APPLICATION_JSON).content("{broken"),403);
+    }
+
+    @Test void productPriceAndStatusAuditUseRealBeforeAfterAndRequestTrace() throws Exception {
+        api("POST","/product","{\"name\":\"audit-product\",\"price\":10,\"stock\":3}",200);
+        long id=jdbc.queryForObject("SELECT id FROM t_product",Long.class);
+        var result=mvc.perform(put("/product").header("Authorization",adminToken()).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"id\":"+id+",\"price\":12,\"status\":0,\"description\":\"Synthetic-Address-Secret\"}")).andReturn().getResponse();
+        assertThat(result.getStatus()).isEqualTo(200);
+        String trace=result.getHeader("X-Trace-Id");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM t_admin_audit WHERE trace_id=?",Long.class,trace)).isEqualTo(3);
+        var payload=jdbc.queryForObject("SELECT changes_json FROM t_admin_audit WHERE action='PRODUCT_PRICE_CHANGE'",String.class);
+        assertThat(json.readTree(payload).path("PRICE").path("before").asText()).isEqualTo("10");
+        assertThat(json.readTree(payload).path("PRICE").path("after").asText()).isEqualTo("12");
+        assertThat(jdbc.queryForObject("SELECT actor_id FROM t_admin_audit WHERE action='PRODUCT_PRICE_CHANGE'",Long.class)).isEqualTo(1);
+        assertThat(jdbc.queryForList("SELECT changes_json FROM t_admin_audit",String.class).toString()).doesNotContain("Synthetic-Address-Secret","password","token");
+        long count=jdbc.queryForObject("SELECT COUNT(*) FROM t_admin_audit",Long.class);
+        api("PUT","/product","{\"id\":"+id+",\"price\":12.00,\"status\":0}",200);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM t_admin_audit",Long.class)).isEqualTo(count);
+    }
+    @Test void auditFailureRollsBackProductAndDefaultSkuTogether() throws Exception {
+        api("POST","/product","{\"name\":\"audit-product\",\"price\":10,\"stock\":3}",200);
+        long id=jdbc.queryForObject("SELECT id FROM t_product",Long.class);
+        jdbc.execute("CREATE TRIGGER verify_product_audit_failure BEFORE INSERT ON t_admin_audit FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='synthetic audit failure'");
+        try { api("PUT","/product","{\"id\":"+id+",\"price\":99,\"name\":\"must-rollback\"}",500); }
+        finally { jdbc.execute("DROP TRIGGER verify_product_audit_failure"); }
+        assertThat(jdbc.queryForObject("SELECT name FROM t_product",String.class)).isEqualTo("audit-product");
+        assertThat(jdbc.queryForObject("SELECT price FROM t_product_sku WHERE product_id=?",java.math.BigDecimal.class,id)).isEqualByComparingTo("10");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM t_admin_audit",Long.class)).isEqualTo(1);
+    }
 }

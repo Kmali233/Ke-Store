@@ -21,6 +21,7 @@
     <!-- 聚合的子模块：新增服务时在此追加一行 -->
     <modules>
         <module>xiaoke-common</module>
+        <module>xiaoke-audit</module>
         <module>xiaoke-product</module>
         <module>xiaoke-user</module>
         <module>xiaoke-order</module>
@@ -60,6 +61,10 @@
                 <groupId>com.xiaoke</groupId>
                 <artifactId>xiaoke-common</artifactId>
                 <version>${project.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>com.xiaoke</groupId><artifactId>xiaoke-audit</artifactId><version>${project.version}</version>
             </dependency>
 
             <!-- MyBatis-Plus (Spring Boot 3) -->

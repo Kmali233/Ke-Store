@@ -2,6 +2,8 @@ package com.xiaoke.product.service.impl;
 
 import com.xiaoke.common.exception.BusinessException;
 import com.xiaoke.product.enums.CatalogStatus;
+import com.xiaoke.audit.*;
+import static com.xiaoke.audit.AuditChanges.Field.*;
 import com.xiaoke.common.result.ResultCode;
 import com.xiaoke.product.dto.*;
 import com.xiaoke.product.entity.Category;
@@ -22,6 +24,7 @@ public class CategoryServiceImpl implements CategoryService {
     private final CategoryChainPolicy chains;
     private final CatalogTransactions transactions;
     private final CatalogValidation validation;
+    private final AuditWriter audit;
 
     @Override
     public List<CategoryVO> listVisibleCategories() {
@@ -48,6 +51,7 @@ public class CategoryServiceImpl implements CategoryService {
             row.setStatus(dto.getStatus() == null ? CatalogStatus.ENABLED.value() : dto.getStatus());
             row.setDeleted(0);
             oneRow(categories.insert(row));
+            audit.record(AuditAction.CATEGORY_CREATE,row.getId(),AuditChanges.start().put(STATUS,null,row.getStatus()).put(PARENT_ID,null,row.getParentId()));
             return null;
         });
     }
@@ -70,6 +74,9 @@ public class CategoryServiceImpl implements CategoryService {
                 chains.requireUsable(updated.getParentId(), locked, row.getId());
             }
             if (!row.equals(updated)) { oneRow(categories.updateEditableFields(updated)); }
+            audit.record(AuditAction.CATEGORY_UPDATE,row.getId(),AuditChanges.start().put(STATUS,row.getStatus(),updated.getStatus())
+                    .put(PARENT_ID,row.getParentId(),updated.getParentId()).profile(!Arrays.asList(row.getName(),row.getIcon(),row.getSort())
+                            .equals(Arrays.asList(updated.getName(),updated.getIcon(),updated.getSort()))));
             return null;
         });
     }
@@ -83,6 +90,7 @@ public class CategoryServiceImpl implements CategoryService {
                 throw new BusinessException(409, "分类仍有有效子分类或商品");
             }
             oneRow(categories.markDeleted(id));
+            audit.record(AuditAction.CATEGORY_DELETE,id,AuditChanges.start().put(DELETED,0,1));
             return null;
         });
     }

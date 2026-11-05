@@ -1,5 +1,15 @@
 # 最终系统测试与并发验证
 
+阶段06完整验收：`python scripts/verify-admin-audit.py`。默认24并发、8轮：核对V5升级V6、所有历史迁移、全工程clean verify（包括audit模块单测及真实DB测试）、五个JVM的业务/审计同事务回滚、改价差异、按操作者/订单/traceId检索、双order并发发货仅一条成功审计、无权限拒绝、摘要异常识别、断库安全日志及旧交易回归。证据保存于 `output/final-verification/<运行目录>/`，安全文件位于其 `security/`，不操作原3306业务实例。
+
+仅在已有验证JAR需要单独复验HTTP时使用 `python scripts/verify-admin-audit.py --http-only`，该模式明确记录 `maven_executed=false`，不会冒充重新执行Java测试。业务JAR中的审计日志路径可由 `XIAOKE_SECURITY_AUDIT_DIR` 配置，各PID写独立文件，避免双order争用滚动文件。
+
+阶段05完整验收：`python scripts/verify-admin-rbac.py`。默认24并发、8轮，创建隔离MySQL及验证库，执行V4至V5升级、所有历史迁移演示、全工程clean verify（真实DB开关全启用）、五个JVM的权限矩阵/商品创建/发货/撤权/禁用/断库、交易并发与日志核对。报告在 `output/final-verification/<运行目录>/result.json`，并记录临时进程和数据清理状态；不接触现有3306业务实例。详情见[阶段05实现说明](../xiaoke-admin/详细实现说明.md)。
+
+阶段05支持 `python scripts/verify-admin-rbac.py --http-only`：显式复用已经验证的JAR，在新隔离MySQL上重做V4升级、当前版本迁移和所有HTTP/并发/故障场景；不重跑Maven及历史阶段01—03迁移演示。结果标明 `maven_executed=false`，应与此前的clean verify证据一起阅读。本轮还将验证端口选择改到15000—34999，避开默认动态客户端端口范围，避免JVM启动期间端口被临时客户端连接占用。
+
+原有 `verify-system.py`、`verify-idempotency.py`、`verify-skus.py`、`verify-admin-auth.py` 的业务写入测试均已使用隔离后台JWT及角色数据，原有 `admin=True` 参数现在表示测试管理身份，不再发送公共管理密钥。
+
 阶段04完整验收：`python scripts/verify-admin-auth.py`。当前针对独立 `xiaoke-admin` 模块，继承阶段01—03迁移、幂等、SKU和交易并发回归。构建并核对common/product/user/order/admin五个模块，启动独立admin、user、product和双order共五个JVM，验证管理员入口只属于admin、离线初始化与重复拒绝、买家/后台隔离、24并发退出只递增一次版本、禁用/删除/恢复、断库503、恢复就绪和日志凭据。product/order真实DB测试直接验证本地只读适配器和共享认证规则，不向生产JAR添加测试身份入口。操作说明见[后台认证实现说明](../xiaoke-admin/详细实现说明.md)。
 
 阶段04也支持 `python scripts/verify-admin-auth.py --http-only`：明确复用此前已验证的四个业务JAR，在新的隔离MySQL中用Flyway迁移全部版本后，执行全部HTTP、并发、账本、故障及日志检查。此模式不重跑Maven/JUnit或历史迁移演示；报告mode为 `full_http_using_existing_verified_jars`，`maven_executed=false`，不能冒充重新clean verify。用于Java测试和迁移已通过后，单独复验HTTP验证器。数据库重启先等待真实关闭完成，再观察五个JVM的连接池恢复就绪。重构后首次验证必须执行默认完整入口，以清理旧class和重新核对模块归属。

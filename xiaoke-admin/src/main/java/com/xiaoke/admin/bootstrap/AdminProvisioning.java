@@ -12,6 +12,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 
 import java.util.Locale;
+import com.xiaoke.audit.*;
+import static com.xiaoke.audit.AuditChanges.Field.*;
 
 /** 离线初始化、恢复，初始化管理员账号 */
 @Component
@@ -24,8 +26,10 @@ public class AdminProvisioning implements ApplicationRunner {
     private final JdbcTemplate jdbc;
     private final PasswordEncoder passwords;
     private final Validator validator;
-    public AdminProvisioning(Environment env, JdbcTemplate jdbc, PasswordEncoder passwords, Validator validator) {
+    private final AuditWriter audit;
+    public AdminProvisioning(Environment env, JdbcTemplate jdbc, PasswordEncoder passwords, Validator validator, AuditWriter audit) {
         this.env = env; this.jdbc = jdbc; this.passwords = passwords; this.validator = validator;
+        this.audit=audit;
     }
 
     @Override
@@ -42,6 +46,12 @@ public class AdminProvisioning implements ApplicationRunner {
         String username = dto.getUsername().toLowerCase(Locale.ROOT);
         String hash = passwords.encode(dto.getPassword());
         String mode = env.getProperty("xiaoke.admin.provision.mode", "create");
+        new org.springframework.transaction.support.TransactionTemplate(
+                new org.springframework.jdbc.datasource.DataSourceTransactionManager(java.util.Objects.requireNonNull(jdbc.getDataSource())))
+                .executeWithoutResult(tx -> write(mode, username, hash));
+        // No usernames, passwords, hashes or JWTs in output.
+    }
+    private void write(String mode, String username, String hash) {
         int changed;
         if ("create".equals(mode)) {
             // Explicit id=1 plus the PK prevents two simultaneous empty-table initializers creating two admins.
@@ -57,6 +67,14 @@ public class AdminProvisioning implements ApplicationRunner {
             throw new IllegalStateException("Provision mode must be create or recover");
         }
         if (changed != 1) { throw new IllegalStateException("Provisioning refused: expected exactly one eligible account"); }
-        // No usernames, passwords, hashes or JWTs in output.
+        if ("create".equals(mode)) {
+            if (jdbc.update("INSERT INTO t_admin_account_role(admin_id,role_id) VALUES(1,1)") != 1) {
+                throw new IllegalStateException("Initial system role assignment failed");
+            }
+            audit.record(AuditAction.ADMIN_CREATE,1,AuditChanges.start().put(STATUS,null,1).put(ROLE_IDS,java.util.List.of(),java.util.List.of(1L)));
+        } else {
+            long id=java.util.Objects.requireNonNull(jdbc.queryForObject("SELECT id FROM t_admin_account WHERE username=?",Long.class,username));
+            audit.record(AuditAction.ADMIN_CREDENTIAL_RECOVER,id,AuditChanges.start().put(SESSION_REVOKED,false,true));
+        }
     }
 }

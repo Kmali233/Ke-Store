@@ -11,7 +11,7 @@ import org.springframework.stereotype.Repository;
 /** 账号查询、撤销 SQL,相当于mapper */
 @Repository
 @ConditionalOnProperty(prefix = "xiaoke.admin", name = "enabled", havingValue = "true")
-public class AdminAccountStore implements AdminAccountLookup {
+public class AdminAccountStore implements AdminAccountLookup, AdminPermissionLookup {
     private final JdbcTemplate jdbc;
     public AdminAccountStore(JdbcTemplate jdbc) {
         this.jdbc = jdbc;
@@ -36,5 +36,14 @@ public class AdminAccountStore implements AdminAccountLookup {
         if (changed != 1) {
             throw new BusinessException(ResultCode.UNAUTHORIZED);
         }
+    }
+    @Override
+    public java.util.Set<String> permissions(long adminId) {
+        return java.util.Set.copyOf(jdbc.queryForList("""
+                SELECT DISTINCT rp.permission_code FROM t_admin_account_role ar
+                JOIN t_admin_role_permission rp ON rp.role_id=ar.role_id
+                JOIN t_admin_account a ON a.id=ar.admin_id
+                WHERE ar.admin_id=? AND a.status=1 AND a.deleted=0
+                """, String.class, adminId));
     }
 }

@@ -1,10 +1,30 @@
 # 数据库增量迁移（阶段01）
 
+## 阶段06：V6管理操作审计（2026-10-29）
+
+新增 `V6__management_audit.sql`：追加 `t_admin_audit` 成功审计表，并将 `audit:read` 仅授予系统管理员角色。V1—V5保持原文。当前共16张业务/辅助表，不含Flyway历史表；历史章节中的表数只代表当时版本。
+
+先核对目标库并备份，在维护窗口执行 `python scripts/db_migrate.py migrate --maintenance` 和 `python scripts/db_migrate.py validate`，再部署新版本admin/product/order。缺少审计表时重要管理写入会失败并回滚，不允许降级为只修改业务。审计与业务使用同一数据源、同一本地事务。
+
+审计表没有到管理员表的外键，账号后续删除不会级联删除历史证据。唯一event_key防止同一发货动作重复成功入账；按时间、操作者、对象、traceId建立索引。SHA-256用于发现内容被修改，不等于不可篡改或数字签名。
+
+应用接口只提供分页读取，不提供修改/删除/导出。建议数据库账号按表授权：product/order仅INSERT审计表，admin可SELECT/INSERT，归档/清理由独立维护账号执行；本次未修改真实数据库用户授权。成功审计默认保留至少180天的运维策略，由维护人员核对备份和归档后分批清理，当前没有自动清理任务。具体脱敏、保留和故障策略见[审计实现说明](../../基础模块后阶段计划/06-管理操作审计模块/详细实现说明.md)。
+
+## 阶段05：V5后台角色权限（2026-10-29）
+
+新增 `V5__admin_rbac.sql`，创建角色、权限、角色权限和账号角色四张表，含主键、唯一键和外键。当前共15张业务/辅助表，不含Flyway历史表。四类初始角色与五个权限码详见[阶段05说明](../xiaoke-admin/详细实现说明.md)。V1—V4原文不改。
+
+已有V4库升级时，仅最早的正常且未删除账号自动获得系统管理员角色，其他账号不自动提权。没有符合条件账号的库不会分配任何角色；空库在V5迁移后用admin离线create，同时原子创建首账号及系统角色关系。若旧库全为禁用/删除账号，离线recover不会自动启用或提权，需在明确的维护流程中由数据库管理员核对并修复身份关系。
+
+先备份并暂停旧管理写进程，执行 `python scripts/db_migrate.py migrate --maintenance` 与 `python scripts/db_migrate.py validate`，然后整体部署新admin/product/order。旧代码仍可能接受本地管理密钥，不能作为RBAC部署的一部分保留。DDL在MySQL中不保证整文件事务回滚；失败先核对Flyway历史和实际结构，依照阶段01备份/恢复流程处理。回退代码不会撤销权限表，也不应重新开放旧门禁。
+
+测试使用隔离MySQL；`python scripts/verify-admin-rbac.py`覆盖V4升级/重复迁移、真实DB测试、双订单进程授权及原有交易并发回归。生成测试结构使用 `python scripts/sync-test-schemas.py`，校验使用 `--check`。结构与种子数据均来自版本迁移，测试库不会将默认凭据带入真实库。
+
 ## 阶段04：V4后台独立账号（2026-10-28）
 
-`V4__admin_auth.sql`新增 `t_admin_account`，包括独立用户名唯一索引、BCrypt哈希、启停/删除状态、非负 `token_version` 及时间列。没有默认管理员或演示口令。V1—V3保持原文；当前全量迁移产生11张业务/迁移辅助表（不含Flyway history）。下文各阶段表数是历史记录。
+`V4__admin_auth.sql`新增 `t_admin_account`，包括独立用户名唯一索引、BCrypt哈希、启停/删除状态、非负 `token_version` 及时间列。没有默认管理员或演示口令。V1—V3保持原文；V4时点全量迁移产生11张业务/迁移辅助表（不含Flyway history）。下文各阶段表数是历史记录。
 
-按既有迁移流程核对目标、备份并在维护期间运行 `python scripts/db_migrate.py migrate --maintenance`，随后执行 `python scripts/db_migrate.py validate`；既有V3库只新增V4表，原买家/商品/订单数据不重写。2026-10-29已将账号维护重写为独立 `xiaoke-admin` 模块，先迁移再使用admin JAR离线初始化账号，然后启动admin。具体命令见[后台认证实现说明](../xiaoke-admin/详细实现说明.md)。V4表结构不因模块迁移而改写，不需要V5；此前已迁移的库保留账号、哈希和版本。恢复旧版代码不会删除该表；回滚数据库仍按备份恢复流程处理，禁止修改已执行脚本。
+按既有迁移流程核对目标、备份并在维护期间运行 `python scripts/db_migrate.py migrate --maintenance`，随后执行 `python scripts/db_migrate.py validate`；既有V3库只新增V4表，原买家/商品/订单数据不重写。2026-10-29已将账号维护重写为独立 `xiaoke-admin` 模块，先迁移再使用admin JAR离线初始化账号，然后启动admin。具体命令见[后台认证实现说明](../xiaoke-admin/详细实现说明.md)。V4表结构不因模块迁移而改写，当时重写无需额外DDL；本次阶段05另有V5权限迁移，账号、哈希和版本继续保留。恢复旧版代码不会删除该表；回滚数据库仍按备份恢复流程处理，禁止修改已执行脚本。
 
 `sync-test-schemas.py`为admin生成独立后台表测试结构，user结构仅有买家和地址表；product/order结构含后台表以验证本模块只读认证适配器。`python scripts/verify-admin-auth.py`核对四个业务模块的测试结构，以及实际JAR连接的完整迁移库。
 

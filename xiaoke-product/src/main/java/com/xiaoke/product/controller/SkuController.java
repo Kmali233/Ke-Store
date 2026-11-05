@@ -1,5 +1,6 @@
 package com.xiaoke.product.controller;
-import com.xiaoke.common.auth.LocalAdminOnly;
+import com.xiaoke.common.auth.admin.AdminPermission;
+import com.xiaoke.common.auth.admin.AdminPermissions;
 import com.xiaoke.common.result.Result;
 import com.xiaoke.common.web.AllowedQuery;
 import com.xiaoke.product.dto.SkuInput;
@@ -13,10 +14,10 @@ import java.util.List;
 @RestController @RequestMapping("/product/{pid}/skus") @RequiredArgsConstructor
 public class SkuController {
     private final SkuService service;
-    @PostMapping @LocalAdminOnly
+    @PostMapping @AdminPermission(AdminPermissions.PRODUCT_WRITE)
     public Result<SkuVO> create(@PathVariable Long pid,@Valid @RequestBody SkuInput dto) {return Result.success(service.create(pid,dto));}
-    @PutMapping("/{id}") @LocalAdminOnly
+    @PutMapping("/{id}") @AdminPermission(AdminPermissions.PRODUCT_WRITE)
     public Result<Void> update(@PathVariable Long pid,@PathVariable Long id,@Valid @RequestBody SkuInput dto) {service.update(pid,id,dto);return Result.success();}
-    @DeleteMapping("/{id}") @LocalAdminOnly
+    @DeleteMapping("/{id}") @AdminPermission(AdminPermissions.PRODUCT_WRITE)
     public Result<Void> delete(@PathVariable Long pid,@PathVariable Long id) {service.delete(pid,id);return Result.success();}
 }
