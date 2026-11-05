@@ -8,6 +8,7 @@ public final class AdminContext {
     private static final ThreadLocal<AdminPrincipal> HOLDER = new ThreadLocal<>();
     private AdminContext() { }
     public static void set(AdminPrincipal principal) { HOLDER.set(principal); }
+    public static java.util.Optional<AdminPrincipal> current() { return java.util.Optional.ofNullable(HOLDER.get()); }
     public static AdminPrincipal requirePrincipal() {
         var principal = HOLDER.get();
         if (principal == null) { throw new BusinessException(ResultCode.UNAUTHORIZED); }

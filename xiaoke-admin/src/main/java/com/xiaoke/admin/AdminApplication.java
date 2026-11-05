@@ -4,6 +4,7 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 /** Owns administrator credentials and their lifecycle; never scans buyer business code. */
+@org.springframework.context.annotation.Import(com.xiaoke.audit.AuditConfiguration.class)
 @SpringBootApplication(scanBasePackages = {"com.xiaoke.admin", "com.xiaoke.common"})
 public class AdminApplication {
     public static void main(String[] args) {

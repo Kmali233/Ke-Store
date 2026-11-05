@@ -8,7 +8,7 @@ import org.springframework.stereotype.Repository;
 /** Read-only adapter for the current shared-MySQL deployment. No credential or account writes. */
 @Repository
 @ConditionalOnProperty(prefix = "xiaoke.admin", name = "enabled", havingValue = "true")
-public class ProductAdminAccountLookup implements AdminAccountLookup {
+public class ProductAdminAccountLookup implements AdminAccountLookup, AdminPermissionLookup {
     private final JdbcTemplate jdbc;
     public ProductAdminAccountLookup(JdbcTemplate jdbc) { this.jdbc = jdbc; }
     @Override
@@ -17,5 +17,14 @@ public class ProductAdminAccountLookup implements AdminAccountLookup {
                 (rs, row) -> new AdminAccountState(rs.getLong("id"), rs.getString("username"),
                         rs.getLong("token_version"), rs.getInt("status"), rs.getInt("deleted")), adminId);
         return rows.isEmpty() ? null : rows.get(0);
+    }
+    @Override
+    public java.util.Set<String> permissions(long adminId) {
+        return java.util.Set.copyOf(jdbc.queryForList("""
+                SELECT DISTINCT rp.permission_code FROM t_admin_account_role ar
+                JOIN t_admin_role_permission rp ON rp.role_id=ar.role_id
+                JOIN t_admin_account a ON a.id=ar.admin_id
+                WHERE ar.admin_id=? AND a.status=1 AND a.deleted=0
+                """, String.class, adminId));
     }
 }

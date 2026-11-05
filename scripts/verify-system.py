@@ -4,6 +4,8 @@ Only Python stdlib and the project's existing Java/Maven/MySQL installation are 
 """
 import argparse
 import base64
+import hmac
+import hashlib
 import http.client
 import http.server
 from collections import Counter
@@ -31,9 +33,19 @@ FLAGS = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
 
 
 def free_port():
-    with socket.socket() as probe:
-        probe.bind(('127.0.0.1', 0))
-        return probe.getsockname()[1]
+    # Keep listeners out of Windows' default dynamic client-port range. A port
+    # returned by bind(0) can become a JDBC/HTTP client port while a JVM boots.
+    for _ in range(64):
+        port = 15000 + secrets.randbelow(20000)
+        try:
+            with socket.socket() as probe:
+                if hasattr(socket, 'SO_EXCLUSIVEADDRUSE'):
+                    probe.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+                probe.bind(('127.0.0.1', port))
+                return port
+        except OSError:
+            continue
+    raise RuntimeError('No available verification listener port')
 
 
 def stop(process):
@@ -113,7 +125,7 @@ class Verification:
 
     def build(self):
         env = os.environ.copy()
-        env.update({'XIAOKE_RUN_DB_TESTS': 'true', 'DB_USERNAME': 'root', 'DB_PASSWORD': ''})
+        env.update({'XIAOKE_SECURITY_AUDIT_DIR': str(self.out / 'security'), 'XIAOKE_RUN_DB_TESTS': 'true', 'DB_USERNAME': 'root', 'DB_PASSWORD': ''})
         names = {'common': 'XIAOKE_TEST_DB_URL', 'user': 'XIAOKE_USER_TEST_DB_URL',
                  'product': 'XIAOKE_PRODUCT_TEST_DB_URL', 'order': 'XIAOKE_ORDER_TEST_DB_URL', 'admin': 'XIAOKE_ADMIN_TEST_DB_URL'}
         for module, variable in names.items():
@@ -129,7 +141,7 @@ class Verification:
             raise RuntimeError('Maven clean verify failed; see maven-clean-verify.log')
         reports = {}
         cases = []
-        for module in ('common', 'product', 'user', 'order', 'admin'):
+        for module in ('common', 'audit', 'product', 'user', 'order', 'admin'):
             counts = {k: 0 for k in ('tests', 'failures', 'errors', 'skipped')}
             for file in (ROOT / f'xiaoke-{module}/target/surefire-reports').glob('TEST-*.xml'):
                 node = ET.parse(file).getroot()
@@ -149,8 +161,14 @@ class Verification:
         # All app instances share only the fresh order verification schema.
         self.sql('DELETE FROM t_product_sku; DELETE FROM t_order_idempotency; DELETE FROM t_order_item; DELETE FROM t_orders; DELETE FROM t_product_attr; '
                  'DELETE FROM t_product; DELETE FROM t_category; DELETE FROM t_address; DELETE FROM t_user;')
+        self.admin_secret = getattr(self, 'admin_secret', base64.b64encode(secrets.token_bytes(32)).decode())
+        self.sql("INSERT INTO t_admin_account(id,username,password) SELECT 1,'verification_admin','unused-test-only' FROM DUAL "
+                 "WHERE NOT EXISTS(SELECT 1 FROM t_admin_account)")
+        self.sql('INSERT IGNORE INTO t_admin_account_role(admin_id,role_id) VALUES(1,1)')
+        self.refresh_management_token()
         env = os.environ.copy()
-        env.update({'DB_HOST': '127.0.0.1', 'DB_PORT': str(self.port), 'DB_NAME': self.schemas['order'],
+        env.update({'XIAOKE_SECURITY_AUDIT_DIR':str(self.out / 'security'), 'XIAOKE_ADMIN_AUTH_ENABLED':'true', 'XIAOKE_ADMIN_JWT_SECRET_BASE64':self.admin_secret,
+                    'DB_HOST': '127.0.0.1', 'DB_PORT': str(self.port), 'DB_NAME': self.schemas['order'],
                     'DB_USERNAME': 'root', 'DB_PASSWORD': '', 'LOCAL_ADMIN_KEY': self.key,
                     'XIAOKE_JWT_SECRET_BASE64': base64.b64encode(secrets.token_bytes(32)).decode()})
         for name, module in (('product', 'product'), ('user', 'user'), ('order_a', 'order'), ('order_b', 'order')):
@@ -180,12 +198,25 @@ class Verification:
                 raise RuntimeError('Service startup timed out: ' + name)
         print('Product, user and two independent order JVMs ready.', flush=True)
 
+    def refresh_management_token(self):
+        # Test fixture signing only; no credential/token is written to output.
+        name, version = self.sql('SELECT username,token_version FROM t_admin_account WHERE id=1')[0]
+        def encode(value):
+            return base64.urlsafe_b64encode(json.dumps(value,separators=(',',':')).encode()).rstrip(b'=')
+        now = int(time.time())
+        head = encode({'alg':'HS256'})
+        body = encode({'iss':'xiaoke-admin','aud':['xiaoke-backoffice'],'purpose':'admin','sub':'1',
+                       'username':name,'tokenVersion':int(version),'iat':now,'exp':now+1800,'jti':uuid.uuid4().hex})
+        unsigned = head + b'.' + body
+        signature = base64.urlsafe_b64encode(hmac.new(base64.b64decode(self.admin_secret), unsigned, hashlib.sha256).digest()).rstrip(b'=')
+        self.management_token = (unsigned+b'.'+signature).decode()
+
     def call(self, app, method, path, body=None, token=None, admin=False, expected=None, headers=None):
         headers = dict(headers or {})
         if token:
             headers['Authorization'] = token
         if admin:
-            headers['X-Local-Admin-Key'] = self.key
+            headers['Authorization'] = self.management_token
         payload = None
         if body is not None:
             headers['Content-Type'] = 'application/json'
@@ -549,7 +580,7 @@ class Verification:
     def audit_logs(self):
         import re
         credentials = [self.key, 'isolated123', *self.tokens]
-        for file in self.out.glob('*.log'):
+        for file in self.out.rglob('*.log'):
             content = file.read_text(encoding='utf-8', errors='replace')
             assert not any(secret in content for secret in credentials), ('credential in logs', file.name)
             assert not re.search(r'eyJ[A-Za-z0-9_-]{12,}\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+|\$2[aby]\$\d\d\$[./A-Za-z0-9]{53}', content), ('JWT/hash in logs', file.name)

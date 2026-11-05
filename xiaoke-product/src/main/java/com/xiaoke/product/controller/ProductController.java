@@ -2,7 +2,8 @@ package com.xiaoke.product.controller;
 
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.xiaoke.common.result.Result;
-import com.xiaoke.common.auth.LocalAdminOnly;
+import com.xiaoke.common.auth.admin.AdminPermission;
+import com.xiaoke.common.auth.admin.AdminPermissions;
 import com.xiaoke.common.web.AllowedQuery;
 import com.xiaoke.product.dto.ProductCreateDTO;
 import com.xiaoke.product.dto.ProductUpdateDTO;
@@ -46,8 +47,7 @@ public class ProductController {
 
     /** 新增商品 */
     @PostMapping
-    @LocalAdminOnly   /** 仅允许本地管理员操作:
-     这个接口只允许在明确开启的本地开发环境中，由携带正确管理密钥的请求调用 */
+    @AdminPermission(AdminPermissions.PRODUCT_WRITE)
     public Result<Void> add(@Valid @RequestBody ProductCreateDTO dto) {
         /**
          * @RequestBody：从 HTTP 请求体中读取内容，按参数类型转换成 ProductCreateDTO。对于这里的 JSON 请求，会使用 Jackson。
@@ -72,7 +72,7 @@ public class ProductController {
 
     /** 修改商品 */
     @PutMapping
-    @LocalAdminOnly
+    @AdminPermission(AdminPermissions.PRODUCT_WRITE)
     public Result<Void> update(@Valid @RequestBody ProductUpdateDTO dto) {
         productService.updateProduct(dto);
         return Result.success();
@@ -80,7 +80,7 @@ public class ProductController {
 
     /** 删除商品 */
     @DeleteMapping("/{id}")
-    @LocalAdminOnly
+    @AdminPermission(AdminPermissions.PRODUCT_WRITE)
     public Result<Void> delete(@PathVariable Long id) {
         productService.deleteProduct(id);
         return Result.success();
@@ -99,7 +99,7 @@ public class ProductController {
     }
 
     @PostMapping("/{id}/attrs")
-    @LocalAdminOnly
+    @AdminPermission(AdminPermissions.PRODUCT_WRITE)
     public Result<Void> replaceAttrs(@PathVariable Long id, @RequestBody List<ProductAttrSaveDTO> attrs) {
         // 集合的每个元素（包括 null）由 Service 在事务前统一验证。
         productAttrService.replaceAttrs(id, attrs);

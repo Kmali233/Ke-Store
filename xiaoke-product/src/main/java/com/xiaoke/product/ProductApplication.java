@@ -11,6 +11,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
  * 全局异常处理、跨域/分页等通用配置在本服务生效；
  * MapperScan 只加载商品服务自己的 Mapper。
  */
+@org.springframework.context.annotation.Import(com.xiaoke.audit.AuditConfiguration.class)
 @SpringBootApplication(scanBasePackages = {"com.xiaoke.product", "com.xiaoke.common"})
 @MapperScan("com.xiaoke.product.mapper")
 public class ProductApplication {

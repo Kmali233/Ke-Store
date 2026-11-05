@@ -1,5 +1,7 @@
 # 订单服务：接口契约与开发阅读顺序
 
+阶段06：本模块重要管理写入通过 `xiaoke-audit` 在原事务内记录成功事件；审计失败则业务回滚。失败访问记录独立安全日志。当前部署先迁移V6，具体查询与保留策略见[审计说明](../../基础模块后阶段计划/06-管理操作审计模块/详细实现说明.md)。
+
 ## 阶段03更新：SKU下单与旧请求兼容（2026-10-28）
 
 - 新明细使用`{"skuId":123,"quantity":2}`；旧明细`{"productId":1,"quantity":2}`只映射该商品固定默认SKU。每项必须二选一，不得同时填写或都省略；不同SKU可属于同一个SPU。两种选择器最终指向同一SKU时也拒绝重复明细400。
@@ -25,10 +27,10 @@
 | GET /api/order/{orderNo} | 买家JWT | 14位订单号 | OrderDetailVO |
 | GET /api/order/{orderNo}/status | 买家JWT | 14位订单号 | 状态、物流、商品名与数量 |
 | POST /api/order/{orderNo}/pay | 买家JWT | 无body/query | null |
-| POST /api/order/{orderNo}/ship | 本地管理 | logisticsCompany、trackingNo | null |
+| POST /api/order/{orderNo}/ship | 后台JWT + order:ship | logisticsCompany、trackingNo | null |
 | POST /api/order/{orderNo}/cancel | 买家JWT | 无body/query | null |
 
-成功HTTP200/code200/message“操作成功”；错误HTTP与code一致、data=null。JWT请求头是Authorization: 原始JWT，没有Bearer前缀。发货只接受common的本地管理门禁，不要求买家JWT；默认关闭403，显式dev、本机IPv4、开关及服务端密钥齐全后，缺失或错误请求密钥401。
+成功HTTP200/code200/message“操作成功”；错误HTTP与code一致、data=null。JWT请求头是Authorization: 原始JWT，没有Bearer前缀。发货要求common的 `@AdminPermission(ORDER_SHIP)`，使用独立后台JWT及 `order:ship` 权限；无效身份401，权限不足403。
 
 七个买家接口每次都查数据库账号；不存在/已删401、禁用403。本人不存在、已删和他人的订单均404。幂等查询仅按当前用户查询回执，不返回其他用户结果。客户端不能指定userId。
 
@@ -130,7 +132,7 @@ java -jar xiaoke-order/target/xiaoke-order-1.0.0.jar
 
 dev设置DB_USERNAME、DB_PASSWORD，可选DB_HOST/DB_PORT/DB_NAME。设置与user相同的XIAOKE_JWT_SECRET_BASE64，解码至少32字节。PRODUCT_BASE_URL默认http://127.0.0.1:8081/api，创建订单需要商品服务可达；查询/支付/发货/取消不调用商品HTTP。prod要求完整DB_URL和PRODUCT_BASE_URL，不使用默认数据库凭据。
 
-本地发货需SPRING_PROFILES_ACTIVE=dev、XIAOKE_LOCAL_ADMIN_ENABLED=true、LOCAL_ADMIN_KEY；请求传X-Local-Admin-Key。任何激活prod的情况都拒绝本地发货管理操作。
+发货需 `XIAOKE_ADMIN_AUTH_ENABLED=true`、与admin一致的 `XIAOKE_ADMIN_JWT_SECRET_BASE64` 及V5角色数据。请求传 `Authorization: <原始后台JWT>`；系统管理员或履约人员可发货，本地管理密钥不再授予发货权限。详见[阶段05说明](../xiaoke-admin/详细实现说明.md)。
 
 初学先读OrderController.detail→OrderQueryService→DefaultOrderQueryService.detail→OrdersMapper.selectOwned→Orders/OrderItem与VO。然后依次看分页、状态枚举、支付、创建编排、创建事务、取消、单号和并发测试。
 

@@ -15,6 +15,7 @@
     <description>商品服务（可独立启动）</description>
 
     <dependencies>
+        <dependency><groupId>com.xiaoke</groupId><artifactId>xiaoke-audit</artifactId></dependency>
         <!-- 公共模块：传递带入 web / validation / mybatis-plus -->
         <dependency>
             <groupId>com.xiaoke</groupId>

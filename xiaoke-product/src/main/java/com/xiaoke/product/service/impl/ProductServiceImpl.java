@@ -4,6 +4,8 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.xiaoke.common.exception.BusinessException;
 import com.xiaoke.product.enums.CatalogStatus;
+import com.xiaoke.audit.*;
+import static com.xiaoke.audit.AuditChanges.Field.*;
 import com.xiaoke.common.result.ResultCode;
 import com.xiaoke.common.web.PageQuery;
 import com.xiaoke.product.dto.*;
@@ -27,6 +29,7 @@ public class ProductServiceImpl implements ProductService {
     private final CatalogTransactions transactions;
     private final CatalogValidation validation;
     private final SkuService skus;
+    private final AuditWriter audit;
 
     @Override
     public IPage<ProductVO> pageProducts(ProductQueryDTO query) {
@@ -88,34 +91,72 @@ public class ProductServiceImpl implements ProductService {
             row.setDeleted(0);
             oneRow(products.insert(row));
             skus.createDefault(row);
+            audit.record(AuditAction.PRODUCT_CREATE,row.getId(),AuditChanges.start()
+                    .put(PRICE,null,row.getPrice()).put(STOCK,null,row.getStock()).put(STATUS,null,row.getStatus()));
             return null;
         });
     }
 
+    /** 更新商品资料 */
     @Override
     public void updateProduct(ProductUpdateDTO dto) {
+        // 检查
         validation.check(dto);
+        // 开启事务
         transactions.write(() -> {
             Product before = requireActive(products.findIncludingDeleted(dto.getId()));
+            // 读取并锁定默认 SKU
             var locked = chains.lockChains(before.getCategoryId(), dto.getCategoryId());
             Product row = lockStableProduct(before);
             var defaultSku=skus.lockDefault(row.getId());
+            // 记住旧价格
+            var oldPrice=defaultSku.getPrice();
             if (dto.getStock() != null && !dto.getStock().equals(defaultSku.getStock())) {
                 throw new BusinessException(409, "不允许通过资料更新覆盖库存");
             }
             Product updated = new Product();
             BeanUtils.copyProperties(row, updated);
-            if (dto.getName() != null) { updated.setName(dto.getName()); }
-            if (dto.getCategoryId() != null) { updated.setCategoryId(dto.getCategoryId()); }
-            // 用数值比较，1 与 1.00 应是同一次幂等更新。
+            if (dto.getName() != null) {
+                updated.setName(dto.getName());
+            }
+            if (dto.getCategoryId() != null) {
+                updated.setCategoryId(dto.getCategoryId());
+            }
+            // 更新价格
             skus.updateDefault(defaultSku,dto.getPrice());
-            if (dto.getImage() != null) { updated.setImage(dto.getImage()); }
-            if (dto.getDescription() != null) { updated.setDescription(dto.getDescription()); }
-            if (dto.getStatus() != null) { updated.setStatus(dto.getStatus()); }
+
+            if (dto.getImage() != null) {
+                updated.setImage(dto.getImage());
+            }
+            if (dto.getDescription() != null) {
+                updated.setDescription(dto.getDescription());
+            }
+            if (dto.getStatus() != null) {
+                updated.setStatus(dto.getStatus());
+            }
             if (dto.getCategoryId() != null || (CatalogStatus.ENABLED.matches(updated.getStatus()) && !Objects.equals(row.getStatus(), updated.getStatus()))) {
                 chains.requireUsable(updated.getCategoryId(), locked, null);
             }
-            if (!row.equals(updated)) { oneRow(products.updateEditableFields(updated)); }
+            if (!row.equals(updated)) {
+                oneRow(products.updateEditableFields(updated));
+            }
+            // 整理前后差异，写入审计表
+            audit.record(AuditAction.PRODUCT_PRICE_CHANGE,
+                    row.getId(),
+                    AuditChanges
+                            .start()
+                            .put(PRICE,oldPrice,defaultSku.getPrice()));
+            audit.record(AuditAction.PRODUCT_STATUS_CHANGE,
+                    row.getId(),
+                    AuditChanges
+                            .start()
+                            .put(STATUS,row.getStatus(),updated.getStatus()));
+            audit.record(AuditAction.PRODUCT_UPDATE,row.getId(),
+                    AuditChanges
+                            .start()
+                            .put(CATEGORY_ID, row.getCategoryId(),updated.getCategoryId())
+                    .profile(!Arrays.asList(row.getName(),row.getImage(),row.getDescription()).equals(
+                            Arrays.asList(updated.getName(),updated.getImage(),updated.getDescription()))));
             return null;
         });
     }
@@ -129,6 +170,7 @@ public class ProductServiceImpl implements ProductService {
             lockStableProduct(before);
             oneRow(products.markDeleted(id));
             attrs.softDeleteByProductId(id);
+            audit.record(AuditAction.PRODUCT_DELETE,id,AuditChanges.start().put(DELETED,0,1));
             return null;
         });
     }

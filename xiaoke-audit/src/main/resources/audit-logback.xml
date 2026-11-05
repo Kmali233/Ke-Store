@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+    <include resource="org/springframework/boot/logging/logback/console-appender.xml"/>
+    <springProperty scope="context" name="auditName" source="spring.application.name" defaultValue="xiaoke"/>
+    <property name="auditDir" value="${XIAOKE_SECURITY_AUDIT_DIR:-output/security-audit}"/>
+    <appender name="SECURITY_AUDIT" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${auditDir}/${auditName}-${PID:-unknown}.log</file>
+        <append>true</append>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>${auditDir}/${auditName}-${PID:-unknown}.%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
+            <maxFileSize>10MB</maxFileSize><maxHistory>90</maxHistory><totalSizeCap>1GB</totalSizeCap>
+        </rollingPolicy>
+        <encoder><pattern>%date{ISO8601,UTC} %msg%n</pattern><charset>UTF-8</charset></encoder>
+    </appender>
+    <logger name="xiaoke.security.audit" level="INFO" additivity="false"><appender-ref ref="SECURITY_AUDIT"/></logger>
+    <root level="INFO"><appender-ref ref="CONSOLE"/></root>
+</configuration>

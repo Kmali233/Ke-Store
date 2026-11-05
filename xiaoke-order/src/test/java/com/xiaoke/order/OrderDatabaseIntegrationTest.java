@@ -83,6 +83,7 @@ class OrderDatabaseIntegrationTest {
     @Autowired OrderCommandService commands;
     @Autowired OrderQueryService queries;
     @Autowired OrderTransactionService writes;
+    @Autowired com.xiaoke.common.auth.admin.AdminJwtService adminJwt;
     @Autowired LocalAdminProperties admin;
     @Autowired ConfigurableEnvironment environment;
     @Autowired org.springframework.context.ApplicationContext context;
@@ -106,11 +107,16 @@ class OrderDatabaseIntegrationTest {
         jdbc=new JdbcTemplate(source);
     }
     @BeforeEach void reset() {
+        jdbc.update("DELETE FROM t_admin_audit");
         for(String table:List.of("t_product_sku","t_order_idempotency","t_order_item","t_orders","t_product_attr","t_product","t_category","t_address","t_user")) jdbc.update("DELETE FROM "+table);
         a=insert("INSERT INTO t_user(username,password) VALUES ('buyer_one','test-only-unused')");
         b=insert("INSERT INTO t_user(username,password) VALUES ('buyer_two','test-only-unused')");
         tokenA=jwt.issue(a,"buyer_one"); tokenB=jwt.issue(b,"buyer_two");
         HTTP_CALLS.set(0); afterPreread=()->{};
+        jdbc.update("DELETE FROM t_admin_account_role");
+        jdbc.update("DELETE FROM t_admin_account");
+        jdbc.update("INSERT INTO t_admin_account(id,username,password) VALUES(1,'test_admin','unused-test-only')");
+        jdbc.update("INSERT INTO t_admin_account_role(admin_id,role_id) VALUES(1,1)");
         environment.setActiveProfiles("dev"); admin.setLocalAdminEnabled(true); admin.setLocalAdminKey("order-test-admin");
     }
     @AfterEach void contextClean() {
@@ -161,13 +167,13 @@ class OrderDatabaseIntegrationTest {
         assertThat(HTTP_CALLS).hasValue(0);
     }
 
-    @Test void shippingGateRejectsBeforeBodyAndAllowsAdminWithoutBuyerToken() throws Exception {
+    @Test void shippingRequiresAdministratorPermissionBeforeBody() throws Exception {
         for(int mode=0;mode<5;mode++) {
             environment.setActiveProfiles(mode==1?new String[]{"prod"}:mode==2?new String[]{"dev","prod"}:new String[]{"dev"});
             admin.setLocalAdminEnabled(mode!=0); admin.setLocalAdminKey(mode==3?"":"order-test-admin");
             var req=post("/order/20261024000001/ship").contentType(MediaType.APPLICATION_JSON).content("{broken");
             if(mode==4) req.with(r->{r.setRemoteAddr("::1");return r;});
-            response(req,403);
+            response(req,401);
         }
         environment.setActiveProfiles("dev"); admin.setLocalAdminEnabled(true); admin.setLocalAdminKey("order-test-admin");
         response(post("/order/20261024000001/ship").contentType(MediaType.APPLICATION_JSON).content("{broken"),401);
@@ -649,7 +655,8 @@ class OrderDatabaseIntegrationTest {
     private List<String> buyerRoutes(){return List.of("POST /order","GET /order/page","GET /order/20261024000001","GET /order/20261024000001/status","POST /order/20261024000001/pay","POST /order/20261024000001/cancel");}
     private String createApi(long pid,int quantity)throws Exception{return api("POST","/order",payload(dto(pid,quantity)),tokenA,200).get("orderNo").asText();}
     private JsonNode api(String method,String path,String body,String token,int expected)throws Exception{
-        var req=request(HttpMethod.valueOf(method),path).header("X-Local-Admin-Key","order-test-admin");
+        var req=request(HttpMethod.valueOf(method),path);
+        if(path.endsWith("/ship") && token==null) req.header("Authorization",adminToken());
         if(token!=null)req.header("Authorization",token);
         if(body!=null)req.contentType(MediaType.APPLICATION_JSON).content(body);
         return response(req,expected).get("data");
@@ -691,6 +698,7 @@ class OrderDatabaseIntegrationTest {
     @Autowired com.xiaoke.common.auth.admin.AdminJwtService backendTokens;
 
     @Test void readOnlyAdminAdapterUsesSharedRulesAndSeesRevocationImmediately() {
+        jdbc.update("DELETE FROM t_admin_account_role");
         jdbc.update("DELETE FROM t_admin_account");
         jdbc.update("INSERT INTO t_admin_account(id,username,password) VALUES(99,'ops_admin','unused-test-only')");
         var principal = new com.xiaoke.common.auth.admin.AdminPrincipal(99, "ops_admin", 0);
@@ -704,6 +712,7 @@ class OrderDatabaseIntegrationTest {
         assertThat(backendAuthentication.authenticate(fresh).adminId()).isEqualTo(99);
         jdbc.update("UPDATE t_admin_account SET deleted=1 WHERE id=99");
         assertThatThrownBy(() -> backendAuthentication.authenticate(fresh)).isInstanceOf(BusinessException.class);
+        jdbc.update("DELETE FROM t_admin_account_role");
         jdbc.update("DELETE FROM t_admin_account");
         assertThatThrownBy(() -> backendAuthentication.authenticate(fresh)).isInstanceOf(BusinessException.class);
     }
@@ -714,4 +723,36 @@ class OrderDatabaseIntegrationTest {
         }
     }
 
+    private String adminToken() {
+        return adminJwt.issue(new com.xiaoke.common.auth.admin.AdminPrincipal(1,"test_admin",0));
+    }
+
+    @Test void shippingUsesFourRoleMatrixAndFreshPermissions() throws Exception {
+        String token=adminToken();
+        for(long role:List.of(1L,2L,3L,4L)) {
+            jdbc.update("DELETE FROM t_admin_account_role WHERE admin_id=1");
+            jdbc.update("INSERT INTO t_admin_account_role(admin_id,role_id) VALUES(1,?)",role);
+            response(post("/order/20261024000001/ship").header("Authorization",token)
+                    .contentType(MediaType.APPLICATION_JSON).content("{broken"),role==1 || role==3?400:403);
+        }
+        jdbc.update("DELETE FROM t_admin_account_role WHERE admin_id=1");
+        response(post("/order/20261024000001/ship").header("Authorization",tokenA)
+                .contentType(MediaType.APPLICATION_JSON).content("{broken"),401);
+    }
+
+    @Test void shippingAuditIsAtomicAndRepeatedShippingAddsNoSecondSuccess() throws Exception {
+        long pid=product("audit-order",3,"2.00",null); String no=createApi(pid,1);
+        api("POST","/order/"+no+"/pay",null,tokenA,200);
+        String shipping="{\"logisticsCompany\":\"Synthetic-Company-Secret\",\"trackingNo\":\"Synthetic-Tracking-Secret\"}";
+        jdbc.execute("CREATE TRIGGER verify_ship_audit_failure BEFORE INSERT ON t_admin_audit FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='synthetic audit failure'");
+        try { api("POST","/order/"+no+"/ship",shipping,null,500); }
+        finally { jdbc.execute("DROP TRIGGER verify_ship_audit_failure"); }
+        assertThat(jdbc.queryForObject("SELECT status FROM t_orders WHERE order_no=?",Integer.class,no)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM t_admin_audit WHERE action='ORDER_SHIP'",Long.class)).isZero();
+        api("POST","/order/"+no+"/ship",shipping,null,200);
+        api("POST","/order/"+no+"/ship",shipping,null,409);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM t_admin_audit WHERE action='ORDER_SHIP' AND target_id=?",Long.class,no)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT changes_json FROM t_admin_audit WHERE action='ORDER_SHIP'",String.class))
+                .doesNotContain("Synthetic","receiver","tracking","Company");
+    }
 }

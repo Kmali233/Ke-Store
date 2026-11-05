@@ -1,0 +1,6 @@
+interface:
+  display_name: "功能实现图文讲解"
+  short_description: "新功能完成后自动生成离线 HTML，用真实业务操作、调用链与图示讲清实现"
+  default_prompt: "使用 $feature-explainer，为刚完成的功能生成基于当前源码的图文 HTML 实现讲解。"
+policy:
+  allow_implicit_invocation: true

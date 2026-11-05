@@ -1,5 +1,7 @@
 # 商品服务：当前接口契约与开发阅读顺序
 
+阶段06：本模块重要管理写入通过 `xiaoke-audit` 在原事务内记录成功事件；审计失败则业务回滚。失败访问记录独立安全日志。当前部署先迁移V6，具体查询与保留策略见[审计说明](../../基础模块后阶段计划/06-管理操作审计模块/详细实现说明.md)。
+
 更新日期：2026-10-28。服务端口8081，统一前缀/api。阶段03将现有t_product视为SPU，新增t_product_sku作为价格、库存和下单件数的交易权威；没有新增生产依赖。迁移、调用链和本轮证据见[阶段03详细实现说明](详细实现说明.md)。
 
 ## 阶段03：SPU/SKU契约
@@ -7,7 +9,7 @@
 - 商品创建的原price/stock表示默认SKU初始价格/库存，创建SPU与默认SKU共用事务；旧PUT price只修改默认SKU价格，stock只能与默认SKU当前库存核对，不能覆盖库存。t_product的price/stock/sales仅保留切换前数据，不再作为交易权威或维护第二套计数。
 - 商品列表/详情的price是上架且未删除SKU的最低单价（包括库存0的上架SKU），stock是这些SKU库存之和，orderCount是所有SKU（含下架、软删）的未取消下单件数之和。聚合计数使用Long；无可售SKU时price=0、stock=0，由空skus列表表达不可购买，不用0元作为可购买判断。
 - 详情增加skus数组，返回上架未删除SKU，字段为id/productId/name/specs/price/stock/orderCount/image/status/defaultSku。库存0的SKU仍展示，选购页禁用它。SPU及分类可见性规则仍生效。
-- `POST /api/product/{pid}/skus`新增规格，输入name、specs、price、初始stock，image/status可选；成功data为SkuVO。`PUT /api/product/{pid}/skus/{id}`修改名称、规格、价格、图片或状态；stock仅核对。`DELETE /api/product/{pid}/skus/{id}`软删。三个接口均使用原有@LocalAdminOnly门禁，普通买家JWT不能管理SKU。
+- `POST /api/product/{pid}/skus`新增规格，输入name、specs、price、初始stock，image/status可选；成功data为SkuVO。`PUT /api/product/{pid}/skus/{id}`修改名称、规格、价格、图片或状态；stock仅核对。`DELETE /api/product/{pid}/skus/{id}`软删。三个接口均要求后台JWT及 `product:write` 权限，普通买家JWT不能管理SKU。
 - specs为1–5组名称/值，名称trim后1–30字符、值1–50字符，禁止控制字符和归一化后重复名称；按名称排序生成JSON/SHA-256，以商品＋摘要唯一约束防止重复组合。默认SKU的空规格仅系统生成，不允许修改其规格或删除默认SKU，可将它下架。
 - 删除SKU保留库存、下单件数和组合唯一约束，新下单不可用，旧订单取消仍能恢复该SKU。SKU图片null时下单快照使用商品图片。
 
@@ -22,17 +24,17 @@
 | GET /product/page | 公开 | name?、categoryId?、pageNum=1、pageSize=10 | 分页 ProductVO |
 | GET /product/{id} | 公开 | 正数 Long 路径 id | ProductDetailVO，带 attrs |
 | GET /product/search | 公开 | keyword 必填，pageNum=1、pageSize=10 | 分页 ProductVO |
-| POST /product | 本地管理 | ProductCreateDTO | null |
-| PUT /product | 本地管理 | ProductUpdateDTO，body.id 必填 | null |
-| DELETE /product/{id} | 本地管理 | 正数 Long 路径 id | null |
+| POST /product | 后台JWT + product:write | ProductCreateDTO | null |
+| PUT /product | 后台JWT + product:write | ProductUpdateDTO，body.id 必填 | null |
+| DELETE /product/{id} | 后台JWT + product:write | 正数 Long 路径 id | null |
 | GET /product/{id}/attrs | 公开 | 正数 Long 路径 id | ProductAttrVO 数组 |
-| POST /product/{id}/attrs | 本地管理 | ProductAttrSaveDTO 数组，允许 [] 清空 | null |
+| POST /product/{id}/attrs | 后台JWT + product:write | ProductAttrSaveDTO 数组，允许 [] 清空 | null |
 | GET /category/list | 公开 | 无参数 | 扁平 CategoryVO 数组 |
-| POST /category | 本地管理 | CategoryCreateDTO | null |
-| PUT /category | 本地管理 | CategoryUpdateDTO，body.id 必填 | null |
-| DELETE /category/{id} | 本地管理 | 正数 Long 路径 id | null |
+| POST /category | 后台JWT + product:write | CategoryCreateDTO | null |
+| PUT /category | 后台JWT + product:write | CategoryUpdateDTO，body.id 必填 | null |
+| DELETE /category/{id} | 后台JWT + product:write | 正数 Long 路径 id | null |
 
-公开GET忽略无效或过期Authorization。十个写接口使用common的@LocalAdminOnly，不使用买家JWT授予管理权限。管理默认关闭403；显式dev、IPv4本机、服务端密钥齐全且开关开启后，缺失或错误请求密钥401。以下原有字段说明中的price/stock在阶段03均按上述默认SKU写入与SKU聚合读取契约解释。
+公开GET忽略无效或过期Authorization。十个写接口使用common的 `@AdminPermission(PRODUCT_WRITE)`，每次读取最新账号状态和权限。无效/缺失后台JWT返回401，缺少权限403；本地管理密钥无授权作用。以下原有字段说明中的price/stock在阶段03均按上述默认SKU写入与SKU聚合读取契约解释。
 
 ## 2. 输入与返回
 
@@ -95,13 +97,7 @@ java -jar xiaoke-product/target/xiaoke-product-1.0.0.jar
 
 dev 数据库变量：DB_HOST（默认127.0.0.1）、DB_PORT（默认3306）、DB_NAME（默认xiaoke_mall）、DB_USERNAME、DB_PASSWORD。无默认凭据，.env不会自动加载。浏览商品不需要JWT密钥。
 
-需要本机管理时，在 IDEA/启动进程设置：
-- SPRING_PROFILES_ACTIVE=dev（显式激活）
-- XIAOKE_LOCAL_ADMIN_ENABLED=true
-- LOCAL_ADMIN_KEY=自己生成并妥善保存的密钥
-- HTTP请求头 X-Local-Admin-Key 传同一密钥
-
-仅默认dev配置而未显式激活dev时，管理门禁仍拒绝。prod使用DB_URL、DB_USERNAME、DB_PASSWORD；任何激活prod的情况均禁止本地管理写接口。
+需要管理商品时，在启动进程设置 `XIAOKE_ADMIN_AUTH_ENABLED=true` 和 `XIAOKE_ADMIN_JWT_SECRET_BASE64`（与admin一致、与买家密钥不同）。先迁移V5，在admin登录后请求携带 `Authorization: <原始后台JWT>`，账号需有 `product:write` 权限。prod使用DB_URL、DB_USERNAME、DB_PASSWORD；授权不再依赖dev或本机来源。具体账号和角色操作见[阶段05说明](../xiaoke-admin/详细实现说明.md)。
 
 ## 7. 验证与边界
 

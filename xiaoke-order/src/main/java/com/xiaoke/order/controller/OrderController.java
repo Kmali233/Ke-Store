@@ -1,6 +1,8 @@
 package com.xiaoke.order.controller;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.xiaoke.common.auth.*;
+import com.xiaoke.common.auth.admin.AdminPermission;
+import com.xiaoke.common.auth.admin.AdminPermissions;
 import com.xiaoke.common.exception.BusinessException;
 import com.xiaoke.common.result.Result;
 import com.xiaoke.common.web.AllowedQuery;
@@ -69,7 +71,7 @@ public class OrderController {
     }
 
     // 订单发货
-    @PostMapping("/{orderNo}/ship") @LocalAdminOnly
+    @PostMapping("/{orderNo}/ship") @AdminPermission(AdminPermissions.ORDER_SHIP)
     public Result<Void> ship(@PathVariable String orderNo,@Valid @RequestBody OrderShipDTO dto) {
         commands.ship(orderNo,dto);
         return Result.success();

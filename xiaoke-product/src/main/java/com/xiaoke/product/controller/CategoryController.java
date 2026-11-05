@@ -1,6 +1,7 @@
 package com.xiaoke.product.controller;
 
-import com.xiaoke.common.auth.LocalAdminOnly;
+import com.xiaoke.common.auth.admin.AdminPermission;
+import com.xiaoke.common.auth.admin.AdminPermissions;
 import com.xiaoke.common.result.Result;
 import com.xiaoke.product.dto.*;
 import com.xiaoke.product.service.CategoryService;
@@ -19,19 +20,19 @@ public class CategoryController {
     @GetMapping("/list")
     public Result<List<CategoryVO>> list() { return Result.success(categoryService.listVisibleCategories()); }
 
-    @PostMapping @LocalAdminOnly
+    @PostMapping @AdminPermission(AdminPermissions.PRODUCT_WRITE)
     public Result<Void> add(@Valid @RequestBody CategoryCreateDTO dto) {
         categoryService.addCategory(dto);
         return Result.success();
     }
 
-    @PutMapping @LocalAdminOnly
+    @PutMapping @AdminPermission(AdminPermissions.PRODUCT_WRITE)
     public Result<Void> update(@Valid @RequestBody CategoryUpdateDTO dto) {
         categoryService.updateCategory(dto);
         return Result.success();
     }
 
-    @DeleteMapping("/{id}") @LocalAdminOnly
+    @DeleteMapping("/{id}") @AdminPermission(AdminPermissions.PRODUCT_WRITE)
     public Result<Void> delete(@PathVariable Long id) {
         categoryService.deleteCategory(id);
         return Result.success();

@@ -28,5 +28,6 @@ xiaoke:
     max-request-body-bytes: 1048576
 
 logging:
+  config: classpath:audit-logback.xml
   pattern:
     level: "%5p [traceId:%X{traceId}]"

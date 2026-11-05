@@ -1,0 +1,32 @@
+{
+  "description": "小Ke商城：功能完成后生成离线图文 HTML；Stop 只检查已登记产物，最多补漏一次。",
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$(git rev-parse --show-toplevel)/scripts/feature-explainer.py\" hook",
+            "commandWindows": "python -c \"import pathlib,runpy,subprocess,sys; root=subprocess.check_output(['git','rev-parse','--show-toplevel'],encoding='utf-8').strip(); sys.argv=[str(pathlib.Path(root)/'scripts'/'feature-explainer.py'),'hook']; runpy.run_path(sys.argv[0],run_name='__main__')\"",
+            "timeout": 10,
+            "statusMessage": "加载功能图文讲解流程",
+            "additionalContextLimit": 1500
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$(git rev-parse --show-toplevel)/scripts/feature-explainer.py\" hook",
+            "commandWindows": "python -c \"import pathlib,runpy,subprocess,sys; root=subprocess.check_output(['git','rev-parse','--show-toplevel'],encoding='utf-8').strip(); sys.argv=[str(pathlib.Path(root)/'scripts'/'feature-explainer.py'),'hook']; runpy.run_path(sys.argv[0],run_name='__main__')\"",
+            "timeout": 10,
+            "statusMessage": "检查功能 HTML 讲解是否交付"
+          }
+        ]
+      }
+    ]
+  }
+}

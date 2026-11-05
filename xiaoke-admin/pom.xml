@@ -12,6 +12,7 @@
     <name>xiaoke-admin</name>
     <description>独立后台管理员身份与账号维护</description>
     <dependencies>
+        <dependency><groupId>com.xiaoke</groupId><artifactId>xiaoke-audit</artifactId></dependency>
         <dependency>
             <groupId>com.xiaoke</groupId>
             <artifactId>xiaoke-common</artifactId>

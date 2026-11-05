@@ -6,6 +6,7 @@ import com.xiaoke.common.auth.LocalAdminInterceptor;
 import com.xiaoke.common.auth.LocalAdminProperties;
 import com.xiaoke.common.auth.admin.AdminAuthentication;
 import com.xiaoke.common.auth.admin.AdminInterceptor;
+import com.xiaoke.common.auth.admin.AdminPermissionLookup;
 import com.xiaoke.common.web.StrictInputPolicy;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.annotation.Configuration;
@@ -27,14 +28,17 @@ public class AuthWebMvcConfig implements WebMvcConfigurer {
     private final LocalAdminProperties localAdminProperties;
     private final Environment environment;
     private final ObjectProvider<AdminAuthentication> adminAuthentication;
+    private final ObjectProvider<AdminPermissionLookup> adminPermissions;
 
     public AuthWebMvcConfig(ObjectProvider<JwtService> jwtServiceProvider,
                             LocalAdminProperties localAdminProperties, Environment environment,
-                            ObjectProvider<AdminAuthentication> adminAuthentication) {
+                            ObjectProvider<AdminAuthentication> adminAuthentication,
+                            ObjectProvider<AdminPermissionLookup> adminPermissions) {
         this.jwtServiceProvider = jwtServiceProvider;
         this.localAdminProperties = localAdminProperties;
         this.environment = environment;
         this.adminAuthentication = adminAuthentication;
+        this.adminPermissions = adminPermissions;
     }
 
     // 后台拦截器始终注册，认证组件缺失时对受保护方法拒绝访问。
@@ -42,7 +46,7 @@ public class AuthWebMvcConfig implements WebMvcConfigurer {
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
         JwtService jwtService = jwtServiceProvider.getIfAvailable();
-        registry.addInterceptor(new AdminInterceptor(adminAuthentication.getIfAvailable()))
+        registry.addInterceptor(new AdminInterceptor(adminAuthentication.getIfAvailable(), adminPermissions.getIfAvailable()))
                 .addPathPatterns("/**").order(-30);
 
         // 注册 LocalAdminInterceptor

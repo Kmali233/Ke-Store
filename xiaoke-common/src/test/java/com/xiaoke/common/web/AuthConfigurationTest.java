@@ -63,6 +63,20 @@ class AuthConfigurationTest {
                 });
     }
 
+    @Test void futureBackOfficeWriteWithoutSpecificPermissionRefusesStartup() {
+        new WebApplicationContextRunner().withUserConfiguration(UnguardedApp.class).run(context -> {
+            assertThat(context).hasFailed();
+            assertThat(context.getStartupFailure()).hasMessageContaining("Back-office writes require AdminPermission");
+        });
+    }
+
+    @Test void misspelledPermissionRefusesStartup() {
+        new WebApplicationContextRunner().withUserConfiguration(UnknownPermissionApp.class).run(context -> {
+            assertThat(context).hasFailed();
+            assertThat(context.getStartupFailure()).hasMessageContaining("Unknown administrator permission");
+        });
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {"closed", "noDev", "prod", "mixed", "wildcardBind", "ipv6", "remote", "missingSecret"})
     void adminChecksEnvironmentAndDirectPeerBeforeKey(String scenario) throws Exception {
@@ -119,6 +133,30 @@ class AuthConfigurationTest {
             com.baomidou.mybatisplus.autoconfigure.MybatisPlusAutoConfiguration.class})
     @Import({CommonWebIntegrationTest.Core.class, ConflictController.class})
     static class ConflictApp { }
+
+    @org.springframework.boot.autoconfigure.EnableAutoConfiguration(exclude = {
+            org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration.class,
+            com.baomidou.mybatisplus.autoconfigure.MybatisPlusAutoConfiguration.class})
+    @Import({CommonWebIntegrationTest.Core.class, UnguardedController.class})
+    static class UnguardedApp { }
+
+    @org.springframework.boot.autoconfigure.EnableAutoConfiguration(exclude = {
+            org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration.class,
+            com.baomidou.mybatisplus.autoconfigure.MybatisPlusAutoConfiguration.class})
+    @Import({CommonWebIntegrationTest.Core.class, UnknownPermissionController.class})
+    static class UnknownPermissionApp { }
+
+    @RestController
+    static class UnguardedController {
+        @com.xiaoke.common.auth.admin.AdminRequired
+        @org.springframework.web.bind.annotation.PostMapping("/admin/future-feature") String write() { return "invalid"; }
+    }
+
+    @RestController
+    static class UnknownPermissionController {
+        @com.xiaoke.common.auth.admin.AdminPermission("product:typo")
+        @GetMapping("/admin/typo") String read() { return "invalid"; }
+    }
 
     @RestController
     static class PublicController {
