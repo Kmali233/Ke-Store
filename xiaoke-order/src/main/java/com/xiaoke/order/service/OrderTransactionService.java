@@ -33,6 +33,7 @@ public class OrderTransactionService {
     private final OrderIdempotency idempotency;
     private final OrderSkus skus;
     private final AuditWriter audit;
+    private final CartService cart;
     public List<Long> productIds(OrderCreateDTO dto) {
         return skus.resolve(dto.getItems()).stream().map(OrderSkus.Selection::productId).distinct().sorted().toList();
     }
@@ -40,11 +41,18 @@ public class OrderTransactionService {
         return createOnce(uid,dto,day,null);
     }
     public OrderCreateVO createOnce(Long uid,OrderCreateDTO dto,LocalDate day,OrderIdempotency.Request request) {
+        return createOnce(uid,dto,day,request,false);
+    }
+    public OrderCreateVO createCartOnce(Long uid,OrderCreateDTO dto,LocalDate day,OrderIdempotency.Request request) {
+        return createOnce(uid,dto,day,request,true);
+    }
+    private OrderCreateVO createOnce(Long uid,OrderCreateDTO dto,LocalDate day,OrderIdempotency.Request request,boolean fromCart) {
         return transactions.create(()->{
             users.lock(uid);
             // All order creators lock the user first, serializing one user's keys across JVMs.
             var previous=idempotency.replay(uid,request,true);
             if (previous!=null) { return previous; }
+            if (fromCart) { cart.requireSelection(uid,dto.getItems()); }
             ShippingSnapshot shipping=dto.getAddressId()==null
                     ? new ShippingSnapshot(dto.getReceiverName(),dto.getReceiverPhone(),dto.getReceiverAddress())
                     : addresses.readOwned(uid,dto.getAddressId());
@@ -84,6 +92,7 @@ public class OrderTransactionService {
             rows(items.insertBatch(snapshots),snapshots.size());
             var result=new OrderCreateVO(no,order.getStatus(),total);
             idempotency.save(uid,request,result);
+            if (fromCart) { cart.clearSelection(uid,dto.getItems().size()); }
             return result;
         });
     }

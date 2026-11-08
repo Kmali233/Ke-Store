@@ -215,3 +215,9 @@ V7 新增 `t_inventory_adjustment` 和 `t_inventory_ledger`，V1—V6保持原�
 新建商品/规格也须在创建事务中写OPENING；在线库存操作缺少期初即失败。旧订单明细原样保留，历史取消在迁移期初之上记恢复，不伪造迁移前流水。当前库存与sales应分别等于流水quantity和sales_quantity之和。库存资料PUT不能作为迁移或补账方式。
 
 运行 `python scripts/verify-inventory.py` 在隔离实例验证升级、重跑、历史余额、库存竞争与逐SKU账本；本命令不升级已有3306业务实例。详见[库存接口契约](../xiaoke-product/docs/库存接口.md)。
+
+## 阶段08 购物车迁移
+
+`V8__shopping_cart.sql` 新增空表 `t_cart_item`，已有商品、订单和回执无需回填。联合主键 `(user_id, sku_id)` 保证每个买家每个 SKU 只有一行，CHECK 限制数量为 1–999、勾选值为 0 或 1。购物车保留失效的 SKU 关联供买家查看或移除。
+
+先通过现有维护入口应用迁移，再部署 order 服务。购物车和订单在同一数据源，结算成功时和订单、库存流水、幂等回执一起提交。迁移回放及测试结构校验可运行 `python scripts/sync-test-schemas.py --check`。

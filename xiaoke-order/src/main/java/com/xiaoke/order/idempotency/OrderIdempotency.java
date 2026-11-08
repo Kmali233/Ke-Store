@@ -27,12 +27,19 @@ public class OrderIdempotency {
 
      /** 计算请求摘要,返回幂等键、版本号、内容摘要 */
     public Request request(String key,OrderCreateDTO dto) {
+        return request(key,dto,dto.getItems().stream().anyMatch(item->item.getSkuId()!=null)?2:1);
+    }
+
+    public Request cartRequest(String key,OrderCreateDTO dto) {
+        // Share the key namespace with direct orders, but reject replay across the two operations.
+        return request(key,dto,3);
+    }
+
+    private Request request(String key,OrderCreateDTO dto,int version) {
         key(key);
         // Fixed positional arrays avoid map/JSON property-order and delimiter ambiguities.
-        boolean skuRequest=dto.getItems().stream().anyMatch(item->item.getSkuId()!=null);
-        int version=skuRequest?2:1;
         Object products;
-        if(!skuRequest) {
+        if(version==1) {
             // Keep the exact v1 contract for every legacy productId request, including stored receipts.
             products=dto.getItems().stream().sorted(Comparator.comparing(OrderItemCreateDTO::getProductId))
                     .map(item->List.of(item.getProductId(),item.getQuantity())).toList();

@@ -159,7 +159,7 @@ class Verification:
 
     def start_apps(self):
         # All app instances share only the fresh order verification schema.
-        self.sql('DELETE FROM t_inventory_ledger; DELETE FROM t_inventory_adjustment; '
+        self.sql('DELETE FROM t_cart_item; DELETE FROM t_inventory_ledger; DELETE FROM t_inventory_adjustment; '
                  'DELETE FROM t_product_sku; DELETE FROM t_order_idempotency; DELETE FROM t_order_item; DELETE FROM t_orders; DELETE FROM t_product_attr; '
                  'DELETE FROM t_product; DELETE FROM t_category; DELETE FROM t_address; DELETE FROM t_user;')
         self.admin_secret = getattr(self, 'admin_secret', base64.b64encode(secrets.token_bytes(32)).decode())
@@ -312,6 +312,51 @@ class Verification:
                        {'logisticsCompany': 'Verifier', 'trackingNo': 'SMOKE'}, admin=True)
         self.call('order_a', 'POST', '/order/' + no + '/cancel', token=token, expected=409)
         self.record('seven_order_endpoints_and_owner', stock=list(self.counters(pid)))
+
+    def shopping_cart(self):
+        token, other = self.tokens[:2]
+        pid, kept_pid = self.product(5), self.product(5)
+        sid = int(self.sql(f'SELECT id FROM t_product_sku WHERE product_id={pid} AND is_default=1')[0][0])
+        kept = int(self.sql(f'SELECT id FROM t_product_sku WHERE product_id={kept_pid} AND is_default=1')[0][0])
+        path = '/cart/items/' + str(sid)
+        item = {'skuId': sid, 'quantity': 1}
+        self.race([lambda app=app: self.data_call(app, 'POST', '/cart/items', item, token)
+                   for app in ('order_a', 'order_b')])
+        lines = self.data_call('order_b', 'GET', '/cart', token=token)
+        assert len(lines) == 1 and lines[0]['quantity'] == 2 and lines[0]['selected'] is True
+        assert self.data_call('order_b', 'GET', '/cart', token=other) == []
+        self.call('order_b', 'PATCH', path, {'quantity': 1}, other, expected=404)
+        self.data_call('order_a', 'PATCH', path, {'quantity': 3}, token)
+        self.data_call('order_a', 'POST', '/cart/items', {'skuId': kept, 'quantity': 1}, token)
+        self.data_call('order_b', 'PATCH', '/cart/items/' + str(kept), {'selected': False}, token)
+        address = self.data_call('user', 'POST', '/address', {
+            'receiverName': 'Verifier', 'receiverPhone': '111', 'detailAddress': 'Cart Road',
+            'isDefault': False,
+        }, token)
+        key = 'cart-' + uuid.uuid4().hex
+        headers = {'Idempotency-Key': key}
+        body = {'addressId': address['id'], 'items': [{'skuId': sid, 'quantity': 3}]}
+        assert self.counters(pid) == (5, 0)
+        self.call('order_a', 'POST', '/cart/checkout',
+                  {**body, 'items': [item]}, token, headers=headers, expected=409)
+        assert len(self.data_call('order_b', 'GET', '/cart', token=token)) == 2
+        first, replay = self.race([
+            lambda app=app: self.data_call(app, 'POST', '/cart/checkout', body, token, headers=headers)
+            for app in ('order_a', 'order_b')
+        ])
+        assert first == replay and first['totalAmount'] == Decimal('37.02')
+        assert self.data_call('order_b', 'GET', '/order/idempotency/' + key, token=token) == first
+        remaining = self.data_call('order_b', 'GET', '/cart', token=token)
+        assert len(remaining) == 1 and remaining[0]['skuId'] == kept and remaining[0]['selected'] is False
+        self.data_call('order_b', 'POST', '/cart/items', item, token)
+        assert self.data_call('order_a', 'POST', '/cart/checkout', body, token, headers=headers) == first
+        assert {line['skuId']: line['quantity'] for line in self.data_call('order_b', 'GET', '/cart', token=token)} == {
+            sid: 1, kept: 1,
+        }
+        assert self.counters(pid) == (2, 3) and self.counters(kept_pid) == (5, 0)
+        self.data_call('order_a', 'DELETE', path, token=token)
+        self.data_call('order_b', 'DELETE', '/cart/items/' + str(kept), token=token)
+        self.record('cart_checkout_across_order_instances', quantity=3, amount='37.02', replay_preserved_new_items=True)
 
     def registration_and_defaults(self):
         name = 'final_same_username'
@@ -621,7 +666,7 @@ class Verification:
             scenarios = (self.smoke,) if faults_only else (self.smoke, self.registration_and_defaults, self.last_stock,
                              self.distinct_product_orders, self.pay_cancel,
                              self.shipping_cancel, self.product_updates, self.categories, self.attributes,
-                             self.address_order, self.lost_committed_response, self.inventory_ledger)
+                             self.address_order, self.lost_committed_response, self.shopping_cart, self.inventory_ledger)
             for scenario in scenarios:
                 scenario()
             self.real_service_failures()

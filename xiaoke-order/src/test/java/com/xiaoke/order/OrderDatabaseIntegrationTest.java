@@ -81,6 +81,7 @@ class OrderDatabaseIntegrationTest {
     @Autowired ObjectMapper json;
     @Autowired JwtService jwt;
     @Autowired OrderCommandService commands;
+    @Autowired CartService cart;
     @Autowired OrderQueryService queries;
     @Autowired OrderTransactionService writes;
     @Autowired com.xiaoke.common.auth.admin.AdminJwtService adminJwt;
@@ -107,6 +108,7 @@ class OrderDatabaseIntegrationTest {
         jdbc=new JdbcTemplate(source);
     }
     @BeforeEach void reset() {
+        jdbc.update("DELETE FROM t_cart_item");
         jdbc.update("DELETE FROM t_admin_audit");
         jdbc.update("DELETE FROM t_inventory_ledger"); jdbc.update("DELETE FROM t_inventory_adjustment");
         for(String table:List.of("t_product_sku","t_order_idempotency","t_order_item","t_orders","t_product_attr","t_product","t_category","t_address","t_user")) jdbc.update("DELETE FROM "+table);
@@ -624,6 +626,181 @@ class OrderDatabaseIntegrationTest {
         var first=newFacade();var second=newFacade();
         assertThat(race(()->first.create(a,skuDto(sid,1),"one"),()->second.create(b,skuDto(sid,1),"two"))).containsExactlyInAnyOrder(200,409);
         assertSku(sid,0,1);assertSku(sibling,4,0);assertCounts(pid,5,0);
+    }
+
+    @Test void cartRoutesUseBuyerIdentityAndMergeOneRowPerSku() throws Exception {
+        long sid = defaultSku(product("cart", 5, "3.25", null));
+        String path = "/cart/items/" + sid;
+        String item = "{\"skuId\":%d,\"quantity\":2}".formatted(sid);
+        api("GET", "/cart", null, null, 401);
+        api("POST", "/cart/items", item, null, 401);
+        api("PATCH", path, "{\"selected\":false}", null, 401);
+        api("DELETE", path, null, null, 401);
+        api("POST", "/cart/checkout", "{}", null, 401);
+        api("GET", "/cart?userId=" + b, null, tokenA, 400);
+        api("POST", "/cart/items", item.replace("}", ",\"userId\":" + b + "}"), tokenA, 400);
+        api("POST", "/cart/items", item, tokenA, 200);
+        api("PATCH", path, "{\"selected\":false}", tokenA, 200);
+        api("POST", "/cart/items", item, tokenA, 200);
+        var merged = api("GET", "/cart", null, tokenA, 200);
+        assertThat(merged.size()).isEqualTo(1);
+        assertThat(merged.get(0).get("quantity").asInt()).isEqualTo(4);
+        assertThat(merged.get(0).get("selected").asBoolean()).isFalse();
+        assertThat(merged.get(0).get("price").decimalValue()).isEqualByComparingTo("3.25");
+        assertThat(merged.get(0).get("availability").asText()).isEqualTo("AVAILABLE");
+        assertThat(api("GET", "/cart", null, tokenB, 200).size()).isZero();
+        api("PATCH", path, "{\"quantity\":1}", tokenB, 404);
+        api("DELETE", path, null, tokenB, 404);
+        api("PATCH", path, "{}", tokenA, 400);
+        api("PATCH", path, "{\"quantity\":999,\"selected\":true}", tokenA, 200);
+        api("POST", "/cart/items", item, tokenA, 409);
+        assertThat(count("t_cart_item")).isEqualTo(1);
+        assertThatThrownBy(() -> jdbc.update("INSERT INTO t_cart_item VALUES (?, ?, 1, 1)", a, sid))
+                .isInstanceOf(org.springframework.dao.DuplicateKeyException.class);
+        assertThatThrownBy(() -> jdbc.update("UPDATE t_cart_item SET quantity=1000"))
+                .isInstanceOf(org.springframework.dao.DataAccessException.class);
+        assertThatThrownBy(() -> jdbc.update("UPDATE t_cart_item SET selected=2"))
+                .isInstanceOf(org.springframework.dao.DataAccessException.class);
+        assertSku(sid, 5, 0);
+        assertThat(HTTP_CALLS).hasValue(0);
+        api("DELETE", path, null, tokenA, 200);
+        assertThat(count("t_cart_item")).isZero();
+    }
+
+    @Test void cartCheckoutRechecksPriceAndStockAndPreservesUnselectedItems() throws Exception {
+        long pid = product("phone", 5, "3.25", null);
+        long sid = defaultSku(pid), other = sku(pid, "white", 5, "1.00");
+        long address = cartAddress(a);
+        cart.add(a, sid, 2);
+        cart.add(a, other, 1);
+        cart.update(a, other, null, false);
+        String key = "cart-price";
+        String body = cartPayload(sid, 2, address);
+        response(post("/cart/checkout").header("Authorization", tokenA)
+                .contentType(MediaType.APPLICATION_JSON).content(body), 400);
+        response(cartCheckout(body.substring(0, body.length() - 1) + ",\"totalAmount\":0}", key), 400);
+        response(cartCheckout(cartPayload(sid, 2, cartAddress(b)), key), 404);
+        // Another buyer takes most of the stock after this buyer has prepared checkout.
+        commands.create(b, skuDto(sid, 4), "other-buyer");
+        response(cartCheckout(body, key), 409);
+        assertThat(cart.list(a)).hasSize(2);
+        assertThat(cart.list(a).get(0).availability().name()).isEqualTo("OUT_OF_STOCK");
+        api("GET", "/order/idempotency/" + key, null, tokenA, 404);
+        cart.update(a, sid, 1, null);
+        body = cartPayload(sid, 1, address);
+        afterPreread = () -> jdbc.update("UPDATE t_product_sku SET price=8.50 WHERE id=?", sid);
+        var receipt = response(cartCheckout(body, key), 200).get("data");
+        assertThat(receipt.get("totalAmount").decimalValue()).isEqualByComparingTo("8.50");
+        assertSku(sid, 0, 5);
+        assertSku(other, 5, 0);
+        assertThat(cart.list(a)).singleElement().satisfies(line -> {
+            assertThat(line.skuId()).isEqualTo(other);
+            assertThat(line.selected()).isFalse();
+        });
+        assertThat(queries.detail(a, receipt.get("orderNo").asText()).items().get(0).price())
+                .isEqualByComparingTo("8.50");
+        assertThat(api("GET", "/order/idempotency/" + key, null, tokenA, 200)).isEqualTo(receipt);
+        api("GET", "/order/idempotency/" + key, null, tokenB, 404);
+        cart.add(a, sid, 3);
+        assertThat(response(cartCheckout(body, key), 200).get("data")).isEqualTo(receipt);
+        response(cartCheckout(cartPayload(sid, 3, address), key), 409);
+        assertThat(cart.list(a).get(0).quantity()).isEqualTo(3);
+        var direct = new CartCheckoutDTO(address, null, List.of(new CartCheckoutDTO.Item(sid, 1))).toOrder();
+        response(post("/order").header("Authorization", tokenA).header("Idempotency-Key", key)
+                .contentType(MediaType.APPLICATION_JSON).content(payload(direct)), 409);
+        assertThat(count("t_orders")).isEqualTo(2);
+    }
+
+    @Test void cartKeepsUnavailableSkuAndCannotCheckoutAnUnavailableCategoryOrProduct() throws Exception {
+        long root = category(0), child = category(root);
+        long pid = product("category-cart", 4, "3", child), sid = defaultSku(pid);
+        long address = cartAddress(a);
+        cart.add(a, sid, 1);
+        jdbc.update("UPDATE t_category SET status=0 WHERE id=?", root);
+        assertThat(cart.list(a).get(0).availability().name()).isEqualTo("OFF_SHELF");
+        response(cartCheckout(cartPayload(sid, 1, address), "off-shelf"), 404);
+        jdbc.update("UPDATE t_category SET status=1 WHERE id=?", root);
+        jdbc.update("UPDATE t_product SET status=0 WHERE id=?", pid);
+        assertThat(cart.list(a).get(0).availability().name()).isEqualTo("OFF_SHELF");
+        response(cartCheckout(cartPayload(sid, 1, address), "off-shelf"), 404);
+        jdbc.update("UPDATE t_product SET status=1 WHERE id=?", pid);
+        jdbc.update("UPDATE t_product_sku SET deleted=1 WHERE id=?", sid);
+        assertThat(cart.list(a).get(0).availability().name()).isEqualTo("INVALID_SKU");
+        response(cartCheckout(cartPayload(sid, 1, address), "off-shelf"), 404);
+        jdbc.update("DELETE FROM t_product_sku WHERE id=?", sid);
+        assertThat(cart.list(a).get(0).availability().name()).isEqualTo("INVALID_SKU");
+        assertThat(count("t_cart_item")).isEqualTo(1);
+        assertThat(count("t_orders")).isZero();
+        cart.delete(a, sid);
+    }
+
+    @Test void concurrentCartAddsMergeAndCheckoutRejectsAChangedSelection() throws Exception {
+        long sid = defaultSku(product("cart-race", 10, "2", null)), address = cartAddress(a);
+        assertThat(race(() -> cart.add(a, sid, 1), () -> cart.add(a, sid, 2))).containsExactly(200, 200);
+        assertThat(count("t_cart_item")).isEqualTo(1);
+        assertThat(cart.list(a).get(0).quantity()).isEqualTo(3);
+        afterPreread = () -> cart.add(a, sid, 1);
+        response(cartCheckout(cartPayload(sid, 3, address), "stale-cart"), 409);
+        assertThat(cart.list(a).get(0).quantity()).isEqualTo(4);
+        assertSku(sid, 10, 0);
+        assertThat(count("t_orders")).isZero();
+        var dto = new CartCheckoutDTO(address, null, List.of(new CartCheckoutDTO.Item(sid, 4))).toOrder();
+        var first = newFacade();
+        var second = newFacade();
+        assertThat(race(() -> first.checkoutCart(a, dto, "same-cart"),
+                () -> second.checkoutCart(a, dto, "same-cart"))).containsExactly(200, 200);
+        assertThat(cart.list(a)).isEmpty();
+        assertThat(count("t_orders")).isEqualTo(1);
+        assertSku(sid, 6, 4);
+    }
+
+    @Test void cartCleanupFailureRollsBackAndLostSuccessIsRecoveredWithoutCleaningAgain() throws Exception {
+        long sid = defaultSku(product("cart-rollback", 10, "2", null)), address = cartAddress(a);
+        var dto = new CartCheckoutDTO(address, null, List.of(new CartCheckoutDTO.Item(sid, 2))).toOrder();
+        cart.add(a, sid, 2);
+        jdbc.execute("""
+            CREATE TRIGGER cart_delete_failure BEFORE DELETE ON t_cart_item FOR EACH ROW
+            SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='test cart cleanup failure'
+            """);
+        try {
+            response(cartCheckout(cartPayload(sid, 2, address), "cart-recover"), 500);
+        } finally {
+            jdbc.execute("DROP TRIGGER cart_delete_failure");
+        }
+        assertThat(count("t_orders")).isZero();
+        assertThat(count("t_order_item")).isZero();
+        assertThat(count("t_order_idempotency")).isZero();
+        assertThat(count("t_inventory_ledger")).isEqualTo(1);
+        assertThat(cart.list(a).get(0).quantity()).isEqualTo(2);
+        assertSku(sid, 10, 0);
+        doAnswer(invocation -> {
+            invocation.callRealMethod();
+            throw new org.springframework.transaction.TransactionSystemException("injected lost commit acknowledgement");
+        }).when(transactions).create(any());
+        var facade = newFacade();
+        assertThatThrownBy(() -> facade.checkoutCart(a, dto, "cart-recover"))
+                .isInstanceOf(org.springframework.transaction.TransactionSystemException.class);
+        var result = commands.creationResult(a, "cart-recover");
+        assertThat(cart.list(a)).isEmpty();
+        cart.add(a, sid, 2);
+        assertThat(facade.checkoutCart(a, dto, "cart-recover")).isEqualTo(result);
+        assertThat(cart.list(a).get(0).quantity()).isEqualTo(2);
+        assertThat(count("t_orders")).isEqualTo(1);
+        assertSku(sid, 8, 2);
+    }
+
+    private long cartAddress(long uid) {
+        return insert("INSERT INTO t_address(user_id,receiver_name,receiver_phone,detail_address) VALUES (?,?,?,?)",
+                uid, "Buyer", "1", "Road");
+    }
+
+    private String cartPayload(long sid, int quantity, long address) {
+        return "{\"addressId\":%d,\"items\":[{\"skuId\":%d,\"quantity\":%d}]}".formatted(address, sid, quantity);
+    }
+
+    private MockHttpServletRequestBuilder cartCheckout(String body, String key) {
+        return post("/cart/checkout").header("Authorization", tokenA).header("Idempotency-Key", key)
+                .contentType(MediaType.APPLICATION_JSON).content(body);
     }
 
     private OrderCreateDTO skuDto(long sid,int quantity) {var value=dto(1,quantity);value.getItems().get(0).setProductId(null);value.getItems().get(0).setSkuId(sid);return value;}

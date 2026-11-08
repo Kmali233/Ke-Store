@@ -277,6 +277,16 @@ CREATE TABLE `t_admin_audit` (
   UNIQUE KEY `uk_audit_event` (`event_key`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='管理操作成功审计，时间为UTC，非不可篡改存储';
 
+CREATE TABLE `t_cart_item` (
+  `user_id` bigint NOT NULL,
+  `sku_id` bigint NOT NULL,
+  `quantity` int NOT NULL,
+  `selected` tinyint NOT NULL DEFAULT '1',
+  CONSTRAINT `chk_cart_quantity` CHECK ((`quantity` between 1 and 999)),
+  CONSTRAINT `chk_cart_selected` CHECK ((`selected` in (0,1))),
+  PRIMARY KEY (`user_id`,`sku_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='买家购物车SKU清单';
+
 INSERT INTO t_admin_role(id,code,name) VALUES
  (1,'system_admin','系统管理员'),(2,'product_admin','商品管理员'),
  (3,'fulfillment','履约人员'),(4,'after_sales','售后人员');

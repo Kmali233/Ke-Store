@@ -1,5 +1,24 @@
 # 订单服务：接口契约与开发阅读顺序
 
+## 阶段08：购物车
+
+购物车由 order 服务（8082）提供。所有请求使用买家 JWT，身份从登录上下文取得。接口拒绝额外的查询参数和 JSON 字段。
+
+| 方法与路径 | 请求 | 成功 data |
+|---|---|---|
+| GET /api/cart | 无 | SKU 条目数组，按 skuId 升序 |
+| POST /api/cart/items | `{"skuId":123,"quantity":2}` | null |
+| PATCH /api/cart/items/{skuId} | `{"quantity":3,"selected":false}`，至少提供一个非 null 字段 | null |
+| DELETE /api/cart/items/{skuId} | 无 | null |
+| POST /api/cart/checkout | 必填 `Idempotency-Key`，`{"addressId":7,"items":[{"skuId":123,"quantity":3}]}`，可选 `remark` | 首次下单回执 `orderNo/status/totalAmount` |
+
+- 单个 SKU 数量为 1–999。重复加购合并数量并保留原勾选状态，新条目默认勾选。合并超限返回 409，修改或删除不存在的本人条目返回 404。加购校验商品、SKU 和所属分类可用性，库存不足的条目可以保留在清单里。
+- 查询随当前商品目录返回 `productId`、`productName`、`skuName`、`skuSpec`、`image`、`price`、`stock` 与 `availability`。状态包括 `AVAILABLE`（满足购物车数量）、`OFF_SHELF`（商品、分类或 SKU 停用）、`OUT_OF_STOCK`（库存低于数量）、`INVALID_SKU`（SKU 或商品缺失或删除）。缺失规格时相关展示字段可为空，仍可删除条目。
+- 结算提交查询结果中全部已勾选的 SKU 与数量，最多 20 项，SKU 不重复，并使用本人的收货地址。选项或数量改变时返回 409，客户端重新查询并请买家确认。客户端不提交用户 ID、价格或应付金额。加购与编辑不扣库存，订单事务根据锁定后的价格、状态与库存重新计算、校验并下单。
+- 结算复用同一用户下单键空间，以摘要版本 3 区分购物车和直购。跨入口用同一键、或复用已成功的键却改变内容，会返回 409。订单、库存、回执与已勾选条目清理一起提交，未勾选项保留。未知结果先查 `GET /api/order/idempotency/{key}`。查询 404 时保留原键和原请求，稍后再查或用原内容重试。成功重放只返回回执。
+
+部署前应用 `V8__shopping_cart.sql`。购物车表以 `(user_id, sku_id)` 为主键，数据和订单同库。验收入口为 `python scripts/verify-system.py --workers 4 --rounds 1`。
+
 阶段06：本模块重要管理写入通过 `xiaoke-audit` 在原事务内记录成功事件；审计失败则业务回滚。失败访问记录独立安全日志。当前部署先迁移V6，具体查询与保留策略见[审计说明](../../基础模块后阶段计划/06-管理操作审计模块/详细实现说明.md)。
 
 ## 阶段03更新：SKU下单与旧请求兼容（2026-10-28）

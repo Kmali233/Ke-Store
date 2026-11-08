@@ -40,10 +40,16 @@ public class OrderCommandFacade implements OrderCommandService {
         return idempotency.lookup(uid,key);
     }
     public OrderCreateVO create(Long uid,OrderCreateDTO dto,String key) {
+        return create(uid,dto,key,false);
+    }
+    public OrderCreateVO checkoutCart(Long uid,OrderCreateDTO dto,String key) {
+        return create(uid,dto,key,true);
+    }
+    private OrderCreateVO create(Long uid,OrderCreateDTO dto,String key,boolean fromCart) {
         LocalDate day=LocalDate.now(clock.withZone(zone));
         transactions.outsideTransaction(); input.check(dto); users.check(uid);
         // 整理购买标记，计算请求内容的摘要
-        var request=key==null ? null : idempotency.request(key,dto);
+        var request=fromCart ? idempotency.cartRequest(key,dto) : key==null ? null : idempotency.request(key,dto);
         // 查询以前是否有对应的成功回执
         var previous=idempotency.replay(uid,request,false);
         // 找到并匹配成功，就直接返回原结果
@@ -63,7 +69,10 @@ public class OrderCommandFacade implements OrderCommandService {
         catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); throw new BusinessException(503,"服务暂不可用"); }
         try {
             for (int attempt=1;attempt<=3;attempt++) {
-                try { return request==null ? writes.createOnce(uid,dto,day) : writes.createOnce(uid,dto,day,request); }
+                try {
+                    if (fromCart) { return writes.createCartOnce(uid,dto,day,request); }
+                    return request==null ? writes.createOnce(uid,dto,day) : writes.createOnce(uid,dto,day,request);
+                }
                 catch (DuplicateKeyException duplicate) {
                     if (!orderNumberCollision(duplicate)) { throw duplicate; }
                     if (attempt==3) { throw new BusinessException(409,"订单号分配冲突"); }
