@@ -206,3 +206,18 @@ python scripts/verify-migrations.py
 - [baseline 的含义](https://documentation.red-gate.com/flyway/reference/commands/baseline)
 - [validate 检查范围](https://documentation.red-gate.com/flyway/reference/commands/validate)
 - [预检 pending 过滤规则](https://documentation.red-gate.com/flyway/reference/configuration/flyway-namespace/flyway-ignore-migration-patterns-setting)
+
+
+## 阶段07：库存期初与流水迁移
+
+V7 新增 `t_inventory_adjustment` 和 `t_inventory_ledger`，V1—V6保持原校验和。**升级前停止所有旧版写入进程**，通过既有显式维护入口备份、迁移并检查；V7将已有SKU的stock/sales记录为OPENING。`db_migrate.py` 在V3分批SKU回填后再执行 `inventory_backfill.finish`，覆盖从V1直接升级后才生成的SKU；已有流水从不覆盖，无期初但存在其他流水时拒绝放行。仅执行Flyway DDL可能没有完成回填，不得直接启动业务。
+
+新建商品/规格也须在创建事务中写OPENING；在线库存操作缺少期初即失败。旧订单明细原样保留，历史取消在迁移期初之上记恢复，不伪造迁移前流水。当前库存与sales应分别等于流水quantity和sales_quantity之和。库存资料PUT不能作为迁移或补账方式。
+
+运行 `python scripts/verify-inventory.py` 在隔离实例验证升级、重跑、历史余额、库存竞争与逐SKU账本；本命令不升级已有3306业务实例。详见[库存接口契约](../xiaoke-product/docs/库存接口.md)。
+
+## 阶段08 购物车迁移
+
+`V8__shopping_cart.sql` 新增空表 `t_cart_item`，已有商品、订单和回执无需回填。联合主键 `(user_id, sku_id)` 保证每个买家每个 SKU 只有一行，CHECK 限制数量为 1–999、勾选值为 0 或 1。购物车保留失效的 SKU 关联供买家查看或移除。
+
+先通过现有维护入口应用迁移，再部署 order 服务。购物车和订单在同一数据源，结算成功时和订单、库存流水、幂等回执一起提交。迁移回放及测试结构校验可运行 `python scripts/sync-test-schemas.py --check`。

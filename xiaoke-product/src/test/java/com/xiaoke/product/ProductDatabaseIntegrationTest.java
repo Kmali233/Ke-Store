@@ -75,6 +75,7 @@ class ProductDatabaseIntegrationTest {
     }
     @BeforeEach void reset() {
         jdbc.update("DELETE FROM t_admin_audit");
+        jdbc.update("DELETE FROM t_inventory_ledger"); jdbc.update("DELETE FROM t_inventory_adjustment");
         jdbc.update("DELETE FROM t_product_sku"); jdbc.update("DELETE FROM t_product_attr"); jdbc.update("DELETE FROM t_product"); jdbc.update("DELETE FROM t_category");
         jdbc.update("DELETE FROM t_admin_account_role");
         jdbc.update("DELETE FROM t_admin_account");
@@ -498,6 +499,7 @@ class ProductDatabaseIntegrationTest {
     private long product(String name, Long category) {
         long pid=insert("INSERT INTO t_product(name,category_id,price,stock,sales) VALUES (?,?,1.00,10,4)", name, category);
         jdbc.update("INSERT INTO t_product_sku(product_id,name,spec_json,spec_hash,price,stock,sales,is_default) SELECT id,'default','{}',SHA2('{}',256),price,stock,sales,1 FROM t_product WHERE id=?",pid);
+        jdbc.update("INSERT INTO t_inventory_ledger(sku_id,event_type,business_no,quantity,sales_quantity,before_stock,after_stock) SELECT id,'OPENING','OPENING',stock,sales,0,stock FROM t_product_sku WHERE product_id=?",pid);
         return pid;
     }
     private long insert(String sql, Object... values) {
@@ -555,6 +557,55 @@ class ProductDatabaseIntegrationTest {
         for (String path : java.util.List.of("/admin/auth/me", "/admin/auth/login", "/admin/auth/logout")) {
             assertThat(mvc.perform(get(path)).andReturn().getResponse().getStatus()).isEqualTo(404);
         }
+    }
+
+    @Test void inventoryAdjustmentReplayBoundsPermissionsAndAuditRollback() throws Exception {
+        long pid=product("inventory",null);
+        long sid=jdbc.queryForObject("SELECT id FROM t_product_sku WHERE product_id=?",Long.class,pid);
+        String base="/product/"+pid+"/skus/"+sid+"/inventory";
+        String body="{\"businessNo\":\"inbound-1\",\"type\":\"INBOUND\",\"quantity\":5,\"reason\":\"到货入库\"}";
+        var first=api("POST",base+"/adjustments",body,200);
+        assertThat(api("POST",base+"/adjustments",body,200)).isEqualTo(first);
+        api("POST",base+"/adjustments",body.replace("5","6"),409);
+        assertThat(api("GET",base+"/ledger?businessNo=inbound-1",null,200).get("total").asInt()).isEqualTo(1);
+        assertThat(api("GET",base+"/balance",null,200).get("consistent").asBoolean()).isTrue();
+        assertThat(jdbc.queryForObject("SELECT stock FROM t_product_sku WHERE id=?",Integer.class,sid)).isEqualTo(15);
+        for(String invalid:List.of(body.replace("inbound-1","zero").replace(":5",":0"),
+            body.replace("inbound-1","negative").replace(":5",":-1"),
+            body.replace("inbound-1","large").replace(":5",":2147483647"),
+            body.replace("inbound-1","small").replace("INBOUND","ADJUSTMENT").replace(":5",":-16"))) {
+            api("POST",base+"/adjustments",invalid,invalid.contains(":0")||invalid.contains(":-1,")?400:409);
+        }
+        for(String suffix:List.of("/ledger?unknown=1","/ledger?pageSize=101","/ledger?type=OTHER","/balance?unknown=1"))
+            api("GET",base+suffix,null,400);
+        response(get(base+"/ledger"),401);
+        jdbc.update("DELETE FROM t_admin_account_role WHERE admin_id=1");
+        jdbc.update("INSERT INTO t_admin_account_role(admin_id,role_id) VALUES(1,2)");
+        api("POST",base+"/adjustments",body,403); api("GET",base+"/ledger",null,403);
+        jdbc.update("UPDATE t_admin_account_role SET role_id=3 WHERE admin_id=1");
+        api("GET",base+"/ledger",null,200);
+        jdbc.execute("CREATE TRIGGER inventory_audit_fail BEFORE INSERT ON t_admin_audit FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='test audit failure'");
+        try {api("POST",base+"/adjustments",body.replace("inbound-1","rollback-audit"),500);}
+        finally {jdbc.execute("DROP TRIGGER inventory_audit_fail");}
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM t_inventory_adjustment",Long.class)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT stock FROM t_product_sku WHERE id=?",Integer.class,sid)).isEqualTo(15);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM t_admin_audit WHERE action='INVENTORY_ADJUST'",Long.class)).isEqualTo(1);
+    }
+
+    @Test void inventoryOpeningAndLedgerFailuresRollBackSkuAndAdjustment() throws Exception {
+        long pid=product("inventory_fail",null);
+        long sid=jdbc.queryForObject("SELECT id FROM t_product_sku WHERE product_id=?",Long.class,pid);
+        long openings=jdbc.queryForObject("SELECT COUNT(*) FROM t_inventory_ledger",Long.class);
+        jdbc.execute("CREATE TRIGGER inventory_ledger_fail BEFORE INSERT ON t_inventory_ledger FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='test ledger failure'");
+        try {
+            api("POST","/product/"+pid+"/skus/"+sid+"/inventory/adjustments",
+                "{\"businessNo\":\"failed\",\"type\":\"ADJUSTMENT\",\"quantity\":-2,\"reason\":\"盘点\"}",500);
+            api("POST","/product","{\"name\":\"failed_new\",\"price\":1,\"stock\":3}",500);
+        } finally {jdbc.execute("DROP TRIGGER inventory_ledger_fail");}
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM t_product",Long.class)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM t_inventory_adjustment",Long.class)).isZero();
+        assertThat(jdbc.queryForObject("SELECT stock FROM t_product_sku WHERE id=?",Integer.class,sid)).isEqualTo(10);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM t_inventory_ledger",Long.class)).isEqualTo(openings);
     }
 
     private String adminToken() {

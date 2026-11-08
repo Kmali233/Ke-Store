@@ -49,7 +49,7 @@ class AdminVerification(previous.SkuVerification):
         db.migrate(log=self.out / 'http-database-migrate.log')
         db.flyway('validate', log=self.out / 'http-database-validate.log')
         assert db.query('SELECT version,success FROM flyway_schema_history ORDER BY installed_rank') == [
-            {'version': str(v), 'success': '1'} for v in (1, 2, 3, 4, 5, 6)]
+            {'version': str(v), 'success': '1'} for v in (1, 2, 3, 4, 5, 6, 7)]
         self.record('http_only_fresh_flyway_database_and_explicit_jar_reuse', maven_executed=False)
         self.verify_module_ownership()
 

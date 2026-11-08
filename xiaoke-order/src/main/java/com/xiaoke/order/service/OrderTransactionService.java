@@ -33,6 +33,7 @@ public class OrderTransactionService {
     private final OrderIdempotency idempotency;
     private final OrderSkus skus;
     private final AuditWriter audit;
+    private final CartService cart;
     public List<Long> productIds(OrderCreateDTO dto) {
         return skus.resolve(dto.getItems()).stream().map(OrderSkus.Selection::productId).distinct().sorted().toList();
     }
@@ -40,11 +41,18 @@ public class OrderTransactionService {
         return createOnce(uid,dto,day,null);
     }
     public OrderCreateVO createOnce(Long uid,OrderCreateDTO dto,LocalDate day,OrderIdempotency.Request request) {
+        return createOnce(uid,dto,day,request,false);
+    }
+    public OrderCreateVO createCartOnce(Long uid,OrderCreateDTO dto,LocalDate day,OrderIdempotency.Request request) {
+        return createOnce(uid,dto,day,request,true);
+    }
+    private OrderCreateVO createOnce(Long uid,OrderCreateDTO dto,LocalDate day,OrderIdempotency.Request request,boolean fromCart) {
         return transactions.create(()->{
             users.lock(uid);
             // All order creators lock the user first, serializing one user's keys across JVMs.
             var previous=idempotency.replay(uid,request,true);
             if (previous!=null) { return previous; }
+            if (fromCart) { cart.requireSelection(uid,dto.getItems()); }
             ShippingSnapshot shipping=dto.getAddressId()==null
                     ? new ShippingSnapshot(dto.getReceiverName(),dto.getReceiverPhone(),dto.getReceiverAddress())
                     : addresses.readOwned(uid,dto.getAddressId());
@@ -73,16 +81,18 @@ public class OrderTransactionService {
                 item.setPrice(price); item.setQuantity(quantity); item.setDeleted(0); snapshots.add(item);
             }
             String no=allocator.next(day);
-            for (var item:snapshots) { skus.deduct(item.getSkuId(),item.getQuantity()); }
             Orders order=new Orders();
             order.setOrderNo(no); order.setUserId(uid); order.setTotalAmount(total); order.setStatus(OrderStatus.PENDING_PAYMENT.code());
             order.setReceiverName(shipping.receiverName()); order.setReceiverPhone(shipping.receiverPhone());
             order.setReceiverAddress(shipping.receiverAddress()); order.setRemark(dto.getRemark()); order.setDeleted(0);
             rows(orders.insert(order),1);
+            // Reserve the unique order number before journal events so the existing number-collision retry remains authoritative.
+            for (var item:snapshots) { skus.deduct(item.getSkuId(),item.getQuantity(),no); }
             for (var item:snapshots) { item.setOrderId(order.getId()); item.setOrderNo(no); }
             rows(items.insertBatch(snapshots),snapshots.size());
             var result=new OrderCreateVO(no,order.getStatus(),total);
             idempotency.save(uid,request,result);
+            if (fromCart) { cart.clearSelection(uid,dto.getItems().size()); }
             return result;
         });
     }
@@ -123,7 +133,7 @@ public class OrderTransactionService {
                 if ((long)sku.getStock()+item.getQuantity()>Integer.MAX_VALUE || sku.getSales()<item.getQuantity()) { throw conflict(); }
             }
             if (orders.casCancel(order.getId(),uid)!=1) { throw conflict(); }
-            for (var entry:restores.entrySet()) {skus.restore(entry.getKey(),entry.getValue().getQuantity());}
+            for (var entry:restores.entrySet()) {skus.restore(entry.getKey(),entry.getValue().getQuantity(),no);}
             return null;
         });
     }

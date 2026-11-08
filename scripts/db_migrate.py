@@ -222,6 +222,8 @@ class Database:
         # V3 DDL can commit before the copy finishes. A repeated maintenance run resumes, never resets counters.
         from sku_backfill import finish
         finish(self)
+        from inventory_backfill import finish as inventory_finish
+        inventory_finish(self)
 
     def restore(self, file):
         file = Path(file).resolve()

@@ -140,6 +140,43 @@ CREATE TABLE `t_order_idempotency` (
   UNIQUE KEY `uk_idempotency_order_no` (`order_no`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='下单成功幂等回执';
 
+CREATE TABLE `t_inventory_adjustment` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `business_no` varchar(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `sku_id` bigint NOT NULL,
+  `event_type` varchar(20) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `quantity` int NOT NULL,
+  `reason` varchar(200) NOT NULL,
+  `actor_id` bigint DEFAULT NULL,
+  `created_at` datetime(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  CONSTRAINT `ck_adjustment_quantity` CHECK (((`quantity` <> 0) and ((`event_type` <> _utf8mb4'INBOUND') or (`quantity` > 0)))),
+  CONSTRAINT `ck_adjustment_type` CHECK ((`event_type` in (_utf8mb4'INBOUND',_utf8mb4'ADJUSTMENT'))),
+  KEY `idx_adjustment_sku` (`sku_id`,`id`),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_adjustment_business` (`business_no`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE `t_inventory_ledger` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `sku_id` bigint NOT NULL,
+  `event_type` varchar(20) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `business_no` varchar(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `quantity` int NOT NULL,
+  `sales_quantity` int NOT NULL DEFAULT '0',
+  `before_stock` int NOT NULL,
+  `after_stock` int NOT NULL,
+  `actor_id` bigint DEFAULT NULL,
+  `created_at` datetime(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  `restore_order_no` varchar(64) CHARACTER SET ascii COLLATE ascii_bin GENERATED ALWAYS AS ((case when (`event_type` in (_ascii'CANCEL_RESTORE',_ascii'REFUND_RESTORE')) then `business_no` else NULL end)) STORED,
+  CONSTRAINT `ck_inventory_balance` CHECK (((`before_stock` >= 0) and (`after_stock` >= 0) and ((cast(`before_stock` as signed) + `quantity`) = `after_stock`))),
+  CONSTRAINT `ck_inventory_direction` CHECK ((((`event_type` = _utf8mb4'OPENING') and (`before_stock` = 0) and (`quantity` >= 0) and (`sales_quantity` >= 0)) or ((`event_type` = _utf8mb4'INBOUND') and (`quantity` > 0) and (`sales_quantity` = 0)) or ((`event_type` = _utf8mb4'ADJUSTMENT') and (`quantity` <> 0) and (`sales_quantity` = 0)) or ((`event_type` = _utf8mb4'ORDER_OCCUPY') and (`quantity` < 0) and (`sales_quantity` = -(`quantity`))) or ((`event_type` in (_utf8mb4'CANCEL_RESTORE',_utf8mb4'REFUND_RESTORE')) and (`quantity` > 0) and (`sales_quantity` = -(`quantity`))))),
+  CONSTRAINT `ck_inventory_type` CHECK ((`event_type` in (_utf8mb4'OPENING',_utf8mb4'INBOUND',_utf8mb4'ADJUSTMENT',_utf8mb4'ORDER_OCCUPY',_utf8mb4'CANCEL_RESTORE',_utf8mb4'REFUND_RESTORE'))),
+  KEY `idx_inventory_business` (`business_no`,`id`),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_inventory_event` (`sku_id`,`event_type`,`business_no`),
+  UNIQUE KEY `uk_inventory_restore` (`sku_id`,`restore_order_no`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
 CREATE TABLE `t_product_sku` (
   `id` bigint NOT NULL AUTO_INCREMENT,
   `product_id` bigint NOT NULL,
@@ -239,6 +276,16 @@ CREATE TABLE `t_admin_audit` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_audit_event` (`event_key`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='管理操作成功审计，时间为UTC，非不可篡改存储';
+
+CREATE TABLE `t_cart_item` (
+  `user_id` bigint NOT NULL,
+  `sku_id` bigint NOT NULL,
+  `quantity` int NOT NULL,
+  `selected` tinyint NOT NULL DEFAULT '1',
+  CONSTRAINT `chk_cart_quantity` CHECK ((`quantity` between 1 and 999)),
+  CONSTRAINT `chk_cart_selected` CHECK ((`selected` in (0,1))),
+  PRIMARY KEY (`user_id`,`sku_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='买家购物车SKU清单';
 
 INSERT INTO t_admin_role(id,code,name) VALUES
  (1,'system_admin','系统管理员'),(2,'product_admin','商品管理员'),

@@ -25,18 +25,36 @@ public class OrderCategoryReadAdapter {
             var product=products.findById(id);
             requireAvailable(product);
             refs.put(id,product.getCategoryId());
-            Long cursor=product.getCategoryId();
-            var visited=new HashSet<Long>();
-            while (cursor!=null && cursor!=0) {
-                if (cursor<0 || !visited.add(cursor)) { throw unavailable(); }
-                if (!rows.containsKey(cursor)) { rows.put(cursor,categories.findById(cursor)); }
-                var row=rows.get(cursor);
-                requireAvailable(row);
-                cursor=row.getParentId();
-                if (cursor==null) { throw unavailable(); }
-            }
+            collectChain(product.getCategoryId(),rows);
         }
         return new Discovery(refs,rows);
+    }
+
+    /** Evaluate cart display using the same ancestor rules as order creation. */
+    public Set<Long> availableCategories(Collection<Long> categoryIds) {
+        var available = new HashSet<Long>();
+        var rows = new HashMap<Long, OrderCategoryRow>();
+        for (Long id : categoryIds) {
+            try {
+                collectChain(id, rows);
+                available.add(id);
+            } catch (BusinessException unavailable) {
+                // Keep unavailable catalog entries visible in the cart.
+            }
+        }
+        return available;
+    }
+
+    private void collectChain(Long cursor, Map<Long, OrderCategoryRow> rows) {
+        var visited = new HashSet<Long>();
+        while (cursor != null && cursor != 0) {
+            if (cursor < 0 || !visited.add(cursor)) { throw unavailable(); }
+            if (!rows.containsKey(cursor)) { rows.put(cursor, categories.findById(cursor)); }
+            var row = rows.get(cursor);
+            requireAvailable(row);
+            cursor = row.getParentId();
+            if (cursor == null) { throw unavailable(); }
+        }
     }
 
     /** 按分类 ID 升序加锁，并检查分类有没有变化 */

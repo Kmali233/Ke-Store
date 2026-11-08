@@ -25,11 +25,13 @@ public class SkuService {
     private final CatalogValidation validation;
     private final ObjectMapper json;
     private final AuditWriter audit;
+    private final com.xiaoke.common.inventory.InventoryLedger inventory;
 
     public void createDefault(Product product) {
         var row=new ProductSku();row.setProductId(product.getId());row.setName("默认规格");row.setSpecJson("{}");
         row.setSpecHash(hash("{}"));row.setPrice(product.getPrice());row.setStock(product.getStock());
         row.setSales(product.getOrderCount());row.setStatus(1);row.setIsDefault(1);row.setImage(null);oneRow(skus.insert(row));
+        inventory.opening(row.getId(),row.getStock(),row.getSales());
     }
     public List<SkuVO> list(Long pid,boolean publicOnly) {
         return skus.list(pid).stream().filter(row->!publicOnly || row.getStatus()==1).map(this::view).toList();
@@ -56,6 +58,7 @@ public class SkuService {
             row.setSpecJson(specs(dto.getSpecs()));row.setSpecHash(hash(row.getSpecJson()));row.setPrice(dto.getPrice());
             row.setStock(dto.getStock());row.setSales(0);row.setImage(dto.getImage());row.setStatus(dto.getStatus()==null?1:dto.getStatus());
             row.setIsDefault(0);oneRow(skus.insert(row));
+        inventory.opening(row.getId(),row.getStock(),row.getSales());
             audit.record(AuditAction.SKU_CREATE,row.getId(),AuditChanges.start().put(PRICE,null,row.getPrice())
                     .put(STOCK,null,row.getStock()).put(STATUS,null,row.getStatus()));
             return view(row);
