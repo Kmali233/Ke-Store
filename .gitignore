@@ -29,3 +29,8 @@ __pycache__/
 /project-engineering-file.md
 /apifox-product.json
 
+# Buyer frontend
+node_modules/
+.pnpm-store/
+/frontend/buyer/dist/
+

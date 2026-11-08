@@ -1,0 +1,10 @@
+{
+  "name": "xiaoke-mall",
+  "private": true,
+  "packageManager": "pnpm@11.25.0",
+  "scripts": {
+    "dev": "pnpm --filter @xiaoke/buyer dev",
+    "typecheck": "pnpm --filter @xiaoke/buyer typecheck",
+    "build": "pnpm --filter @xiaoke/buyer build"
+  }
+}
