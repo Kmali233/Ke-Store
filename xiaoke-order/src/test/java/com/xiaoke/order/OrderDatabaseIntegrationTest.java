@@ -108,6 +108,7 @@ class OrderDatabaseIntegrationTest {
     }
     @BeforeEach void reset() {
         jdbc.update("DELETE FROM t_admin_audit");
+        jdbc.update("DELETE FROM t_inventory_ledger"); jdbc.update("DELETE FROM t_inventory_adjustment");
         for(String table:List.of("t_product_sku","t_order_idempotency","t_order_item","t_orders","t_product_attr","t_product","t_category","t_address","t_user")) jdbc.update("DELETE FROM "+table);
         a=insert("INSERT INTO t_user(username,password) VALUES ('buyer_one','test-only-unused')");
         b=insert("INSERT INTO t_user(username,password) VALUES ('buyer_two','test-only-unused')");
@@ -628,7 +629,8 @@ class OrderDatabaseIntegrationTest {
     private OrderCreateDTO skuDto(long sid,int quantity) {var value=dto(1,quantity);value.getItems().get(0).setProductId(null);value.getItems().get(0).setSkuId(sid);return value;}
     private long sku(long pid,String name,int stock,String price) {
         String spec="{\"color\":\""+name+"\"}";
-        return insert("INSERT INTO t_product_sku(product_id,name,spec_json,spec_hash,price,stock) VALUES (?,?,?,SHA2(?,256),?,?)",pid,name,spec,spec,new java.math.BigDecimal(price),stock);
+        long sid=insert("INSERT INTO t_product_sku(product_id,name,spec_json,spec_hash,price,stock) VALUES (?,?,?,SHA2(?,256),?,?)",pid,name,spec,spec,new java.math.BigDecimal(price),stock);
+        jdbc.update("INSERT INTO t_inventory_ledger(sku_id,event_type,business_no,quantity,before_stock,after_stock) VALUES(?,'OPENING','OPENING',?,0,?)",sid,stock,stock);return sid;
     }
     private void assertSku(long sid,int stock,int sales){assertThat(jdbc.queryForObject("SELECT stock FROM t_product_sku WHERE id=?",Integer.class,sid)).isEqualTo(stock);assertThat(jdbc.queryForObject("SELECT sales FROM t_product_sku WHERE id=?",Integer.class,sid)).isEqualTo(sales);}
 
@@ -682,7 +684,23 @@ class OrderDatabaseIntegrationTest {
     private long product(String name,int stock,String price,Long category){
         long pid=insert("INSERT INTO t_product(name,price,stock,category_id) VALUES (?,?,?,?)",name,new java.math.BigDecimal(price),stock,category);
         jdbc.update("INSERT INTO t_product_sku(product_id,name,spec_json,spec_hash,price,stock,sales,is_default) SELECT id,'default','{}',SHA2('{}',256),price,stock,sales,1 FROM t_product WHERE id=?",pid);
+        jdbc.update("INSERT INTO t_inventory_ledger(sku_id,event_type,business_no,quantity,sales_quantity,before_stock,after_stock) SELECT id,'OPENING','OPENING',stock,sales,0,stock FROM t_product_sku WHERE product_id=?",pid);
         return pid;
+    }
+    @Test void inventoryJournalFailureRollsBackCheckoutAndCancellation() {
+        long pid=product("journal",10,"1",null);
+        jdbc.execute("CREATE TRIGGER order_journal_fail BEFORE INSERT ON t_inventory_ledger FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='test journal failure'");
+        try {assertThatThrownBy(()->commands.create(a,dto(pid,2))).isInstanceOf(Exception.class);}
+        finally {jdbc.execute("DROP TRIGGER order_journal_fail");}
+        assertCounts(pid,10,0);assertThat(count("t_orders")).isZero();assertThat(count("t_inventory_ledger")).isEqualTo(1);
+        String no=commands.create(a,dto(pid,2)).orderNo();
+        jdbc.execute("CREATE TRIGGER cancel_journal_fail BEFORE INSERT ON t_inventory_ledger FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='test journal failure'");
+        try {assertThatThrownBy(()->commands.cancel(a,no)).isInstanceOf(Exception.class);}
+        finally {jdbc.execute("DROP TRIGGER cancel_journal_fail");}
+        assertCounts(pid,8,2);assertThat(queries.status(a,no).status()).isZero();
+        commands.cancel(a,no);assertCode(409,()->commands.cancel(a,no));assertCounts(pid,10,0);
+        assertThat(jdbc.queryForObject("SELECT SUM(quantity) FROM t_inventory_ledger WHERE sku_id=?",Long.class,defaultSku(pid))).isEqualTo(10);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM t_inventory_ledger WHERE event_type='CANCEL_RESTORE'",Long.class)).isEqualTo(1);
     }
     private long defaultSku(long pid){return jdbc.queryForObject("SELECT id FROM t_product_sku WHERE product_id=? AND is_default=1",Long.class,pid);}
     private long category(long parent){return insert("INSERT INTO t_category(name,parent_id) VALUES ('test',?)",parent);}

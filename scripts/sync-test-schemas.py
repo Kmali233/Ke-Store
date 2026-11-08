@@ -14,9 +14,9 @@ ROOT = Path(__file__).resolve().parents[1]
 MODULE_TABLES = {
     'user': ('t_user', 't_address'),
     'admin': ('t_admin_account', 't_admin_role', 't_admin_permission', 't_admin_role_permission', 't_admin_account_role','t_admin_audit'),
-    'product': ('t_category', 't_product', 't_product_attr', 't_product_sku', 't_admin_account','t_admin_role','t_admin_permission','t_admin_role_permission','t_admin_account_role','t_admin_audit'),
+    'product': ('t_category', 't_product', 't_product_attr', 't_product_sku', 't_inventory_adjustment','t_inventory_ledger', 't_admin_account','t_admin_role','t_admin_permission','t_admin_role_permission','t_admin_account_role','t_admin_audit'),
     'order': ('t_user', 't_address', 't_category', 't_product', 't_product_attr',
-              't_orders', 't_order_item', 't_order_idempotency','t_product_sku','t_catalog_migration','t_admin_account','t_admin_role','t_admin_permission','t_admin_role_permission','t_admin_account_role','t_admin_audit'),
+              't_orders', 't_order_item', 't_order_idempotency','t_inventory_adjustment','t_inventory_ledger','t_product_sku','t_catalog_migration','t_admin_account','t_admin_role','t_admin_permission','t_admin_role_permission','t_admin_account_role','t_admin_audit'),
 }
 
 

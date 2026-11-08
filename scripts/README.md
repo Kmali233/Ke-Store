@@ -1,5 +1,7 @@
 # 最终系统测试与并发验证
 
+阶段07完整验收：`python scripts/verify-inventory.py`。继承阶段01—06迁移/认证/权限/审计/订单回归，默认24并发8轮；新增V6→V7和V1直升期初补齐、同号重放、跨SKU冲突、上下界、流水失败回滚、调整与双order竞争、已发货拒绝恢复及逐SKU库存/sales/流水链/业务单对账。五个JVM和MySQL均隔离，原3306不参与。`--http-only` 只重跑隔离迁移及HTTP，显式不重跑Maven，不能当作重新完成Java测试。
+
 阶段06完整验收：`python scripts/verify-admin-audit.py`。默认24并发、8轮：核对V5升级V6、所有历史迁移、全工程clean verify（包括audit模块单测及真实DB测试）、五个JVM的业务/审计同事务回滚、改价差异、按操作者/订单/traceId检索、双order并发发货仅一条成功审计、无权限拒绝、摘要异常识别、断库安全日志及旧交易回归。证据保存于 `output/final-verification/<运行目录>/`，安全文件位于其 `security/`，不操作原3306业务实例。
 
 仅在已有验证JAR需要单独复验HTTP时使用 `python scripts/verify-admin-audit.py --http-only`，该模式明确记录 `maven_executed=false`，不会冒充重新执行Java测试。业务JAR中的审计日志路径可由 `XIAOKE_SECURITY_AUDIT_DIR` 配置，各PID写独立文件，避免双order争用滚动文件。
@@ -42,7 +44,7 @@ python scripts/verify-system.py --mysql-home 'D:/Develop/mysql-8.0.34-winx64' --
 
 包含同名注册、默认地址、抢库存、重复支付/取消、发货对取消、商品资料对下单、分类引用/环、参数覆盖/读取/删除、地址修改/删除对下单、不同商品跨order进程并发单号，以及提交后响应被测试代理丢弃的场景。
 
-结束前逐商品核对“stock=初始stock-未取消订单数量”和“sales=未取消订单数量”，检查金额、孤儿记录、默认地址唯一性、分类环、日志凭据和临时诊断标记。最后停止临时product和MySQL，确认HTTP503及下单失败零写入。所有临时进程和数据在finally中清理。
+结束前逐商品核对“stock=初始stock+人工调整总量-未取消订单数量”，并逐SKU核对期初与全部流水、销量、前后余额链及单据关联和“sales=未取消订单数量”，检查金额、孤儿记录、默认地址唯一性、分类环、日志凭据和临时诊断标记。最后停止临时product和MySQL，确认HTTP503及下单失败零写入。所有临时进程和数据在finally中清理。
 
 测试用独立实例root/空密码只存在于临时环境；业务配置不使用这些测试凭据。脚本启动JAR时设置连接池获取超时2秒，用于在故障注入时及时验证503；这不是修改业务配置。
 

@@ -1,5 +1,7 @@
 # 小Ke商城（xiaoke-mall）
 
+阶段07库存调整与流水：product 提供后台 SKU 调整、流水分页与余额核对，要求 `inventory:adjust`；订单扣减/取消恢复与流水同事务。新建 SKU 同时写期初，升级先停旧写入并迁移至 V7。见[库存接口与账本说明](xiaoke-product/docs/库存接口.md)、[详细实现说明](../基础模块后阶段计划/07-库存调整与流水模块/详细实现说明.md)；完整隔离验收：`python scripts/verify-inventory.py`。退款流水类型预留，退款业务属后续阶段。
+
 阶段06管理审计由普通JAR模块 `xiaoke-audit` 提供，admin/product/order复用：成功事件与业务同事务写MySQL，失败访问及敏感读取进入独立滚动安全日志；admin提供 `GET /api/admin/audit/page`，要求 `audit:read`。先迁移至V6。详见[管理操作审计详细实现说明](../基础模块后阶段计划/06-管理操作审计模块/详细实现说明.md)，完整隔离验收命令为 `python scripts/verify-admin-audit.py`。
 
 阶段05后台角色权限已在独立 `xiaoke-admin` 模块实现：四类初始角色、固定权限码、账号创建/禁用/启用、角色整体替换；商品与分类的十个写入口要求后台JWT及 `product:write`，订单发货要求 `order:ship`。角色阶段使用V5，当前部署需迁移至V6，再启用product/order后台认证并配置与admin一致的独立后台密钥。详见[后台角色权限详细实现说明](xiaoke-admin/详细实现说明.md)，完整隔离验收入口为 `python scripts/verify-admin-rbac.py`。阶段04认证记录保留在[历史说明](xiaoke-admin/docs/阶段04-后台管理员认证实现说明.md)。

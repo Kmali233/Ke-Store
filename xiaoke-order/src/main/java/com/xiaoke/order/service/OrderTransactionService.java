@@ -73,12 +73,13 @@ public class OrderTransactionService {
                 item.setPrice(price); item.setQuantity(quantity); item.setDeleted(0); snapshots.add(item);
             }
             String no=allocator.next(day);
-            for (var item:snapshots) { skus.deduct(item.getSkuId(),item.getQuantity()); }
             Orders order=new Orders();
             order.setOrderNo(no); order.setUserId(uid); order.setTotalAmount(total); order.setStatus(OrderStatus.PENDING_PAYMENT.code());
             order.setReceiverName(shipping.receiverName()); order.setReceiverPhone(shipping.receiverPhone());
             order.setReceiverAddress(shipping.receiverAddress()); order.setRemark(dto.getRemark()); order.setDeleted(0);
             rows(orders.insert(order),1);
+            // Reserve the unique order number before journal events so the existing number-collision retry remains authoritative.
+            for (var item:snapshots) { skus.deduct(item.getSkuId(),item.getQuantity(),no); }
             for (var item:snapshots) { item.setOrderId(order.getId()); item.setOrderNo(no); }
             rows(items.insertBatch(snapshots),snapshots.size());
             var result=new OrderCreateVO(no,order.getStatus(),total);
@@ -123,7 +124,7 @@ public class OrderTransactionService {
                 if ((long)sku.getStock()+item.getQuantity()>Integer.MAX_VALUE || sku.getSales()<item.getQuantity()) { throw conflict(); }
             }
             if (orders.casCancel(order.getId(),uid)!=1) { throw conflict(); }
-            for (var entry:restores.entrySet()) {skus.restore(entry.getKey(),entry.getValue().getQuantity());}
+            for (var entry:restores.entrySet()) {skus.restore(entry.getKey(),entry.getValue().getQuantity(),no);}
             return null;
         });
     }

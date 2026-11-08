@@ -159,7 +159,8 @@ class Verification:
 
     def start_apps(self):
         # All app instances share only the fresh order verification schema.
-        self.sql('DELETE FROM t_product_sku; DELETE FROM t_order_idempotency; DELETE FROM t_order_item; DELETE FROM t_orders; DELETE FROM t_product_attr; '
+        self.sql('DELETE FROM t_inventory_ledger; DELETE FROM t_inventory_adjustment; '
+                 'DELETE FROM t_product_sku; DELETE FROM t_order_idempotency; DELETE FROM t_order_item; DELETE FROM t_orders; DELETE FROM t_product_attr; '
                  'DELETE FROM t_product; DELETE FROM t_category; DELETE FROM t_address; DELETE FROM t_user;')
         self.admin_secret = getattr(self, 'admin_secret', base64.b64encode(secrets.token_bytes(32)).decode())
         self.sql("INSERT INTO t_admin_account(id,username,password) SELECT 1,'verification_admin','unused-test-only' FROM DUAL "
@@ -548,7 +549,26 @@ class Verification:
         assert len(rows) == len(self.initial_stock), (len(rows), len(self.initial_stock))
         for pid, stock, sales, quantity in rows:
             pid, stock, sales, quantity = map(int, (pid, stock, sales, quantity))
-            assert stock == self.initial_stock[pid] - quantity and sales == quantity, (pid, stock, sales, quantity)
+            assert stock == self.initial_stock[pid] + int(self.sql("SELECT COALESCE(SUM(a.quantity),0) FROM t_inventory_adjustment a JOIN t_product_sku s ON s.id=a.sku_id WHERE s.product_id="+str(pid))[0][0]) - quantity and sales == quantity, (pid, stock, sales, quantity)
+        ledger_checks = {
+            'sku_journal_balances': """SELECT COUNT(*) FROM t_product_sku s LEFT JOIN
+                (SELECT sku_id,SUM(quantity) stock,SUM(sales_quantity) sales,SUM(event_type='OPENING') openings
+                 FROM t_inventory_ledger GROUP BY sku_id) l ON l.sku_id=s.id
+                WHERE l.sku_id IS NULL OR l.openings<>1 OR l.stock<>s.stock OR l.sales<>s.sales""",
+            'journal_chain': """SELECT COUNT(*) FROM (SELECT before_stock,
+                LAG(after_stock,1,0) OVER(PARTITION BY sku_id ORDER BY id) previous_stock FROM t_inventory_ledger) x
+                WHERE before_stock<>previous_stock""",
+            'journal_orphans': 'SELECT COUNT(*) FROM t_inventory_ledger l LEFT JOIN t_product_sku s ON s.id=l.sku_id WHERE s.id IS NULL',
+            'adjustment_journal': """SELECT COUNT(*) FROM t_inventory_adjustment a LEFT JOIN t_inventory_ledger l
+                ON l.sku_id=a.sku_id AND l.business_no=a.business_no AND l.event_type=a.event_type
+                WHERE l.id IS NULL OR l.quantity<>a.quantity""",
+            'order_journal': """SELECT COUNT(*) FROM t_order_item i JOIN t_orders o ON o.id=i.order_id
+                LEFT JOIN t_inventory_ledger l ON l.sku_id=i.sku_id AND l.business_no=o.order_no AND l.event_type='ORDER_OCCUPY'
+                WHERE l.id IS NULL OR l.quantity<>-i.quantity"""
+        }
+        for name,query in ledger_checks.items():
+            assert self.sql(query)[0][0]=='0', name
+        self.record('per_sku_opening_events_stock_sales_chain_and_business_links',checks=len(ledger_checks))
         # Traverse every active category with no arbitrary depth ceiling.
         categories = {int(i): int(parent) for i, parent in self.sql('SELECT id,parent_id FROM t_category WHERE deleted=0')}
         for start in categories:

@@ -11,6 +11,7 @@ import java.util.*;
 @RequiredArgsConstructor
 public class OrderSkus {
     private final OrderSkuMapper mapper;
+    private final com.xiaoke.common.inventory.InventoryLedger inventory;
     public record Selection(Long productId,Long skuId,int quantity) { }
     public List<Selection> resolve(List<OrderItemCreateDTO> items) {
         var result=new ArrayList<Selection>();
@@ -42,12 +43,14 @@ public class OrderSkus {
             throw new BusinessException(500,"SKU计数异常");
         return row;
     }
-    public void deduct(Long id,int q) {
+    public void deduct(Long id,int q,String orderNo) {
         if(mapper.deduct(id,q)!=1)
             throw new BusinessException(409,"SKU库存冲突");
+        inventory.changed(id,com.xiaoke.common.inventory.InventoryLedger.Event.ORDER_OCCUPY,orderNo,-q,q);
     }
-    public void restore(Long id,int q) {
+    public void restore(Long id,int q,String orderNo) {
         if(mapper.restore(id,q)!=1)
             throw new BusinessException(409,"SKU恢复冲突");
+        inventory.changed(id,com.xiaoke.common.inventory.InventoryLedger.Event.CANCEL_RESTORE,orderNo,q,-q);
     }
 }
