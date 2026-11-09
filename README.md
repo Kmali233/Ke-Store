@@ -1,5 +1,7 @@
 # 小Ke商城（xiaoke-mall）
 
+阶段10运营管理端位于 `frontend/admin`。从仓库根目录运行 `pnpm install --frozen-lockfile`、`pnpm dev:admin`，打开 `http://127.0.0.1:5174`。使用已迁移至 V8 的共享商城库，启动商品、订单和后台身份服务。product 与 order 需要开启后台认证，三者使用同一份独立的后台 JWT 密钥。详见[后台管理端实现说明](../基础模块后阶段计划/10-后台管理端模块/详细实现说明.md)。
+
 阶段07库存调整与流水：product 提供后台 SKU 调整、流水分页与余额核对，要求 `inventory:adjust`；订单扣减/取消恢复与流水同事务。新建 SKU 同时写期初，升级先停旧写入并迁移至 V7。见[库存接口与账本说明](xiaoke-product/docs/库存接口.md)、[详细实现说明](../基础模块后阶段计划/07-库存调整与流水模块/详细实现说明.md)；完整隔离验收：`python scripts/verify-inventory.py`。退款流水类型预留，退款业务属后续阶段。
 
 阶段06管理审计由普通JAR模块 `xiaoke-audit` 提供，admin/product/order复用：成功事件与业务同事务写MySQL，失败访问及敏感读取进入独立滚动安全日志；admin提供 `GET /api/admin/audit/page`，要求 `audit:read`。先迁移至V6。详见[管理操作审计详细实现说明](../基础模块后阶段计划/06-管理操作审计模块/详细实现说明.md)，完整隔离验收命令为 `python scripts/verify-admin-audit.py`。
@@ -282,4 +284,3 @@ xiaoke-mall/                          # 父工程 (packaging=pom)：聚合子模
 6. **无明文密钥进仓库**：API Key、数据源口令全部环境变量注入。
 
 ---
-

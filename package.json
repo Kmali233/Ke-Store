@@ -5,6 +5,9 @@
   "scripts": {
     "dev": "pnpm --filter @xiaoke/buyer dev",
     "typecheck": "pnpm --filter @xiaoke/buyer typecheck",
-    "build": "pnpm --filter @xiaoke/buyer build"
+    "build": "pnpm --filter @xiaoke/buyer build",
+    "dev:admin": "pnpm --filter @xiaoke/admin dev",
+    "typecheck:admin": "pnpm --filter @xiaoke/admin typecheck",
+    "build:admin": "pnpm --filter @xiaoke/admin build"
   }
 }

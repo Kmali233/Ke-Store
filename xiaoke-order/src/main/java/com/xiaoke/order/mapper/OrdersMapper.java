@@ -17,6 +17,23 @@ public interface OrdersMapper extends BaseMapper<Orders> {
     @Select("<script>SELECT order_no,total_amount,status,create_time FROM t_orders "+OWNED+
         " ORDER BY create_time DESC,id DESC LIMIT #{size} OFFSET #{offset}</script>")
     List<Orders> pageOwned(@Param("uid") Long uid,@Param("status") Integer status,@Param("size") long size,@Param("offset") long offset);
+    String ADMIN_FILTER = """
+        WHERE deleted=0
+        <if test="status != null">AND status=#{status}</if>
+        <if test="no != null">AND order_no=#{no}</if>
+        """;
+
+    @Select("<script>SELECT COUNT(*) FROM t_orders " + ADMIN_FILTER + "</script>")
+    long countForAdmin(@Param("no") String no, @Param("status") Integer status);
+
+    @Select("<script>SELECT order_no,total_amount,status,create_time FROM t_orders " + ADMIN_FILTER
+            + " ORDER BY create_time DESC,id DESC LIMIT #{size} OFFSET #{offset}</script>")
+    List<Orders> pageForAdmin(@Param("no") String no, @Param("status") Integer status,
+                             @Param("size") long size, @Param("offset") long offset);
+
+    @Select("SELECT * FROM t_orders WHERE order_no=#{no} AND deleted=0")
+    Orders selectForAdmin(@Param("no") String no);
+
     @Select("SELECT MAX(order_no) FROM t_orders WHERE order_no BETWEEN #{lower} AND #{upper} AND CHAR_LENGTH(order_no)=14")
     String maxOrderNo(@Param("lower") String lower,@Param("upper") String upper);
     @Select("SELECT COUNT(*) FROM t_orders WHERE order_no LIKE #{prefix} AND (CHAR_LENGTH(order_no)!=14 OR order_no NOT REGEXP '^[0-9]{14}$')")

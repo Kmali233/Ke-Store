@@ -8,6 +8,8 @@ import org.springframework.core.annotation.AnnotatedElementUtils;
 import org.springframework.web.method.HandlerMethod;
 import org.springframework.web.servlet.HandlerInterceptor;
 
+import java.util.Arrays;
+
 /**
  * 拦截请求、执行认证
  */
@@ -41,9 +43,12 @@ public class AdminInterceptor implements HandlerInterceptor {
             AdminContext.set(authentication.authenticate(request.getHeader("Authorization")));
             request.setAttribute(VERIFIED_PRINCIPAL, AdminContext.requirePrincipal());
             var required = method.getMethodAnnotation(AdminPermission.class);
-            if (required != null && (permissions == null || !AdminPermissions.ALL.contains(required.value())
-                    || !permissions.permissions(AdminContext.requirePrincipal().adminId()).contains(required.value()))) {
-                throw new BusinessException(ResultCode.FORBIDDEN);
+            if (required != null) {
+                var allowed = Arrays.asList(required.value());
+                if (permissions == null || allowed.isEmpty() || !AdminPermissions.ALL.containsAll(allowed)
+                        || allowed.stream().noneMatch(permissions.permissions(AdminContext.requirePrincipal().adminId())::contains)) {
+                    throw new BusinessException(ResultCode.FORBIDDEN);
+                }
             }
         } else if (handler instanceof HandlerMethod
                 && request.getRequestURI().startsWith(request.getContextPath() + "/admin/")

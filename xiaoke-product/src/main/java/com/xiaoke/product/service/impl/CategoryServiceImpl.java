@@ -9,6 +9,7 @@ import com.xiaoke.product.dto.*;
 import com.xiaoke.product.entity.Category;
 import com.xiaoke.product.mapper.*;
 import com.xiaoke.product.service.*;
+import com.xiaoke.product.vo.AdminCategoryVO;
 import com.xiaoke.product.vo.CategoryVO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.BeanUtils;
@@ -35,6 +36,14 @@ public class CategoryServiceImpl implements CategoryService {
                     .sorted(Comparator.comparing(Category::getParentId).thenComparing(Category::getSort).thenComparing(Category::getId))
                     .map(row -> new CategoryVO(row.getId(), row.getName(), row.getParentId(), row.getIcon(), row.getSort())).toList();
         });
+    }
+
+    @Override
+    public List<AdminCategoryVO> listForAdmin() {
+        return transactions.read(() -> categories.listActive().stream()
+                .sorted(Comparator.comparing(Category::getParentId).thenComparing(Category::getSort).thenComparing(Category::getId))
+                .map(row -> new AdminCategoryVO(row.getId(), row.getName(), row.getParentId(),
+                        row.getIcon(), row.getSort(), row.getStatus())).toList());
     }
 
     @Override
