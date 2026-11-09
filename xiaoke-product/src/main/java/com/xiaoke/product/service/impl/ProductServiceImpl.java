@@ -59,6 +59,38 @@ public class ProductServiceImpl implements ProductService {
     }
 
     @Override
+    public IPage<AdminProductVO> pageForAdmin(ProductQueryDTO query) {
+        validation.check(query);
+        query.validatePage();
+        return transactions.read(() -> {
+            String pattern = literalPattern(query.getName());
+            long total = products.countForAdmin(query.getCategoryId(), pattern);
+            long offset = Math.multiplyExact(query.getPageNum() - 1, query.getPageSize());
+            var page = new Page<AdminProductVO>(query.getPageNum(), query.getPageSize(), total);
+            page.setRecords(offset >= total ? List.of() : products.listForAdmin(query.getCategoryId(),
+                    pattern, offset, query.getPageSize()).stream().map(row -> toAdminVO(row, null)).toList());
+            return page;
+        });
+    }
+
+    @Override
+    public AdminProductVO detailForAdmin(Long id) {
+        validation.id(id);
+        return transactions.read(() -> {
+            Product product = requireActive(products.findIncludingDeleted(id));
+            var variants = skus.list(id, false).stream().map(row -> new AdminProductVO.Sku(row.id(),
+                    row.name(), row.specs(), row.price(), row.stock(), row.image(), row.status(), row.defaultSku())).toList();
+            return toAdminVO(product, variants);
+        });
+    }
+
+    private AdminProductVO toAdminVO(Product product, List<AdminProductVO.Sku> variants) {
+        var row = toVO(product);
+        return new AdminProductVO(row.getId(), row.getName(), row.getCategoryId(), row.getPrice(), row.getStock(),
+                row.getImage(), row.getDescription(), row.getStatus(), variants);
+    }
+
+    @Override
     public ProductDetailVO getProductById(Long id) {
         validation.id(id);
         // 商品、分类和参数在同一 RR 快照内读取，不会读到参数覆盖的中间状态。

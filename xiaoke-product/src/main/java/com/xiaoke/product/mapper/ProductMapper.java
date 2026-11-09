@@ -36,6 +36,20 @@ public interface ProductMapper extends BaseMapper<Product> {
     List<Product> listVisible(@Param("visibleIds") Set<Long> visibleIds, @Param("categoryId") Long categoryId,
                               @Param("pattern") String pattern, @Param("offset") long offset, @Param("size") long size);
 
+    String ADMIN_FILTER = """
+        WHERE deleted=0
+        <if test="categoryId != null">AND category_id=#{categoryId}</if>
+        <if test="pattern != null">AND name LIKE #{pattern} ESCAPE '!'</if>
+        """;
+
+    @Select("<script>SELECT COUNT(*) FROM t_product " + ADMIN_FILTER + "</script>")
+    long countForAdmin(@Param("categoryId") Long categoryId, @Param("pattern") String pattern);
+
+    @Select("<script>SELECT " + COLUMNS + " FROM t_product " + ADMIN_FILTER
+            + " ORDER BY create_time DESC,id DESC LIMIT #{size} OFFSET #{offset}</script>")
+    List<Product> listForAdmin(@Param("categoryId") Long categoryId, @Param("pattern") String pattern,
+                               @Param("offset") long offset, @Param("size") long size);
+
     @Select("SELECT COUNT(*) FROM t_product WHERE category_id=#{id} AND deleted=0")
     long countActiveByCategory(@Param("id") Long id);
 

@@ -34,3 +34,4 @@ node_modules/
 .pnpm-store/
 /frontend/buyer/dist/
 
+/frontend/admin/dist/

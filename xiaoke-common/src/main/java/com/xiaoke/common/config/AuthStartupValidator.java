@@ -74,7 +74,7 @@ public class AuthStartupValidator implements SmartInitializingSingleton {
         List<String> violations = new ArrayList<>();
         for (HandlerMethod handler : handlers) {
             var permission = handler.getMethodAnnotation(AdminPermission.class);
-            if (permission != null && !AdminPermissions.ALL.contains(permission.value())) {
+            if (permission != null && (permission.value().length == 0 || !AdminPermissions.ALL.containsAll(java.util.Arrays.asList(permission.value())))) {
                 throw new IllegalStateException("Unknown administrator permission");
             }
             boolean login = AnnotatedElementUtils.hasAnnotation(handler.getMethod(), LoginRequired.class)

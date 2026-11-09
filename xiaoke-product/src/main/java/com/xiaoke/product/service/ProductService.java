@@ -6,6 +6,8 @@ import com.xiaoke.product.vo.*;
 
 /** 只暴露业务入口，避免 Controller 直接调用通用 CRUD 绕过锁与事务。 */
 public interface ProductService {
+    IPage<AdminProductVO> pageForAdmin(ProductQueryDTO query);
+    AdminProductVO detailForAdmin(Long id);
     IPage<ProductVO> pageProducts(ProductQueryDTO query);
     IPage<ProductVO> searchProducts(ProductSearchDTO query);
     ProductDetailVO getProductById(Long id);

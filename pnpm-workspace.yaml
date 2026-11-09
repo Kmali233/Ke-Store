@@ -1,5 +1,6 @@
 packages:
   - frontend/buyer
+  - frontend/admin
 
 allowBuilds:
   esbuild: true

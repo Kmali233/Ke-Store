@@ -5,4 +5,4 @@ import java.lang.annotation.*;
 
 @Target(ElementType.METHOD)
 @Retention(RetentionPolicy.RUNTIME)
-public @interface AdminPermission { String value(); }
+public @interface AdminPermission { String[] value(); }

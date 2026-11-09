@@ -21,7 +21,7 @@ public class AuditRequestInterceptor implements HandlerInterceptor {
         Object verified=request.getAttribute(AdminInterceptor.VERIFIED_PRINCIPAL);
         Long actor=verified instanceof AdminPrincipal p?p.adminId():null;
         var permission=method.getMethodAnnotation(AdminPermission.class);
-        String operation=permission==null?(login?"LOGIN":"ADMIN_IDENTITY"):permission.value();
+        String operation=permission==null?(login?"LOGIN":"ADMIN_IDENTITY"):String.join("|",permission.value());
         String result=status>=400?"REJECTED":read?"READ_SUCCESS":"AUTH_SUCCESS";
         SECURITY.info("security_audit actorId={} operation={} result={} http={} traceId={}",actor,operation,result,status,
                 response.getHeader("X-Trace-Id"));
