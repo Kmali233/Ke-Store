@@ -66,7 +66,7 @@ class Verification:
         self.mysql = mysql
         self.workers, self.rounds = workers, rounds
         suffix = uuid.uuid4().hex[:12]
-        self.schemas = {m: f'xiaoke_{m}_verify_{suffix}' for m in ('common', 'user', 'product', 'order', 'admin')}
+        self.schemas = {m: f'xiaoke_{m}_verify_{suffix}' for m in ('common', 'user', 'product', 'order', 'admin', 'payment', 'demo')}
         self.port = free_port()
         assert self.port != 3306
         self.client = [str(mysql / 'bin/mysql.exe'), '--no-defaults', '--protocol=TCP',
@@ -127,7 +127,9 @@ class Verification:
         env = os.environ.copy()
         env.update({'XIAOKE_SECURITY_AUDIT_DIR': str(self.out / 'security'), 'XIAOKE_RUN_DB_TESTS': 'true', 'DB_USERNAME': 'root', 'DB_PASSWORD': ''})
         names = {'common': 'XIAOKE_TEST_DB_URL', 'user': 'XIAOKE_USER_TEST_DB_URL',
-                 'product': 'XIAOKE_PRODUCT_TEST_DB_URL', 'order': 'XIAOKE_ORDER_TEST_DB_URL', 'admin': 'XIAOKE_ADMIN_TEST_DB_URL'}
+                 'product': 'XIAOKE_PRODUCT_TEST_DB_URL', 'order': 'XIAOKE_ORDER_TEST_DB_URL',
+                 'admin': 'XIAOKE_ADMIN_TEST_DB_URL', 'payment': 'XIAOKE_PAYMENT_TEST_DB_URL',
+                 'demo': 'XIAOKE_DEMO_TEST_DB_URL'}
         for module, variable in names.items():
             env[variable] = f'jdbc:mysql://127.0.0.1:{self.port}/{self.schemas[module]}?serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true'
             if module != 'common':
@@ -159,7 +161,7 @@ class Verification:
 
     def start_apps(self):
         # All app instances share only the fresh order verification schema.
-        self.sql('DELETE FROM t_cart_item; DELETE FROM t_inventory_ledger; DELETE FROM t_inventory_adjustment; '
+        self.sql('DELETE FROM t_demo_payment_trade; DELETE FROM t_payment_order; DELETE FROM t_cart_item; DELETE FROM t_inventory_ledger; DELETE FROM t_inventory_adjustment; '
                  'DELETE FROM t_product_sku; DELETE FROM t_order_idempotency; DELETE FROM t_order_item; DELETE FROM t_orders; DELETE FROM t_product_attr; '
                  'DELETE FROM t_product; DELETE FROM t_category; DELETE FROM t_address; DELETE FROM t_user;')
         self.admin_secret = getattr(self, 'admin_secret', base64.b64encode(secrets.token_bytes(32)).decode())
@@ -178,7 +180,8 @@ class Verification:
                 env['PRODUCT_BASE_URL'] = self.urls['product']
             with (self.out / (name + '.log')).open('wb') as log:
                 command = ['java', '-jar', str(ROOT / f'xiaoke-{module}/target/xiaoke-{module}-1.0.0.jar'),
-                    '--server.port=' + str(port), '--spring.profiles.active=dev', '--xiaoke.local-admin-enabled=true',
+                    '--server.port=' + str(port), '--spring.profiles.active=' + ('dev,payment-test' if module == 'order' else 'dev'),
+                    '--xiaoke.local-admin-enabled=true',
                     '--spring.datasource.hikari.connection-timeout=2000']
                 self.app_specs[name] = (command, env.copy())
                 process = subprocess.Popen(command,

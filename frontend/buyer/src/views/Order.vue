@@ -1,31 +1,73 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { computed, onScopeDispose, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { errorText, request } from '../api'
 import LoadState from '../components/LoadState.vue'
 import ProductImage from '../components/ProductImage.vue'
-import type { OrderDetail } from '../contracts'
+import type { OrderDetail, PaymentStatus } from '../contracts'
 import { dateLabel, money, snapshotSpecs } from '../display'
 import { useLoad } from '../useLoad'
 
 const route = useRoute()
+const router = useRouter()
 const path = '/order/' + route.params.number
+const paymentPath = path + '/payment'
+const returned = route.query.paymentReturn === '1'
 const paying = ref(false)
+const checking = ref(false)
 const actionError = ref('')
+const actions = new AbortController()
+onScopeDispose(() => actions.abort())
+
 const { data, loading, error, refresh } = useLoad(signal => request<OrderDetail>(path, { auth: true, signal }))
+const paymentStatus = useLoad(signal => request<PaymentStatus>(paymentPath, { auth: true, signal }))
+const { data: payment, error: paymentError } = paymentStatus
+const demo = computed(() => payment.value?.channel === 'DEMO')
+const paymentEnabled = computed(() => demo.value ? payment.value?.demoEnabled : payment.value?.sandboxEnabled)
+const paymentLabel = computed(() => demo.value ? '演示支付' : '支付宝沙箱支付')
 void refresh()
+if (returned) {
+  // The redirect is a hint to query. All other provider URL parameters are discarded.
+  void router.replace({ path: route.path })
+  void checkPayment()
+} else {
+  void paymentStatus.refresh()
+}
 
 async function pay() {
-  if (paying.value || data.value?.status !== 0) return
+  if (paying.value || checking.value || !payment.value?.canStart || data.value?.status !== 0) return
   paying.value = true
   actionError.value = ''
   try {
-    await request(path + '/pay', { method: 'POST', auth: true })
+    const checkout = await request<{ paymentUrl: string }>(paymentPath + (demo.value ? '/demo' : '/alipay'), {
+      method: 'POST', auth: true, signal: actions.signal,
+    })
+    if (demo.value) {
+      await router.push(checkout.paymentUrl)
+    } else {
+      window.location.assign(checkout.paymentUrl)
+    }
   } catch (failure) {
-    actionError.value = errorText(failure) + ' 请以刷新后的订单状态为准。'
+    if (!actions.signal.aborted) actionError.value = errorText(failure)
+    await Promise.all([refresh(), paymentStatus.refresh()])
   } finally {
-    await refresh()
     paying.value = false
+  }
+}
+
+async function checkPayment() {
+  if (checking.value || paying.value) return
+  checking.value = true
+  actionError.value = ''
+  try {
+    await request<PaymentStatus>(paymentPath + '/query', {
+      method: 'POST', auth: true, signal: actions.signal,
+    })
+  } catch (failure) {
+    if (!actions.signal.aborted) actionError.value = errorText(failure)
+  } finally {
+    await Promise.all([refresh(), paymentStatus.refresh()])
+    checking.value = false
   }
 }
 </script>
@@ -60,8 +102,17 @@ async function pay() {
         <aside class="panel padded stack checkout-summary">
           <div class="split"><h2>订单状态</h2><span class="badge">{{ data.statusDesc }}</span></div>
           <strong class="price large">{{ money(data.totalAmount) }}</strong>
-          <p class="notice">模拟支付，仅更新订单状态，无实际扣款。</p>
-          <button v-if="data.status === 0" :disabled="paying" @click="pay">{{ paying ? '正在更新…' : '模拟支付' }}</button>
+          <p v-if="payment?.channel" class="notice">{{ paymentLabel }} · 仅供测试，无真实扣款。</p>
+          <p v-if="checking" class="muted" role="status">支付结果处理中，正在向商城查询…</p>
+          <p v-else-if="payment?.state === 'SUCCEEDED'" role="status">商城已确认{{ demo ? '演示' : '沙箱' }}付款。</p>
+          <p v-else-if="payment?.state === 'PENDING'" class="muted" role="status">等待商城确认付款。已付款时可查询结果。</p>
+          <p v-else-if="payment && !paymentEnabled && data.status === 0" class="muted">支付通道暂未启用。</p>
+          <p v-if="paymentError" class="error" role="alert">{{ paymentError }}</p>
+          <button v-if="data.status === 0 && payment?.canStart" :disabled="paying || checking" @click="pay">
+            {{ paying ? '正在打开收银台…' : (payment.state === 'PENDING' ? '继续' : '去') + paymentLabel }}
+          </button>
+          <button v-if="paymentError || (data.status === 0 && payment?.state === 'PENDING' && paymentEnabled)"
+                  class="secondary" :disabled="paying || checking" @click="checkPayment">查询支付结果</button>
         </aside>
       </div>
     </template>

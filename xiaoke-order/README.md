@@ -1,5 +1,38 @@
 # 订单服务：接口契约与开发阅读顺序
 
+## 阶段10.5：演示支付
+
+使用独立的 `xiaoke_demo_*` 数据库，迁移至 V10。仅订单服务使用 `SPRING_PROFILES_ACTIVE=dev,payment-demo`。同一订单实例只能启用一种测试支付模式。买家登录后在订单详情点击「去演示支付」，从同站点进入演示收银台。收银台使用服务端的测试密钥生成 RSA2 签名，沿用支付单验签与入账流程。
+
+| 方法与路径 | 成功结果 |
+|---|---|
+| POST /api/order/{orderNo}/payment/demo | 生成或复用支付单，返回站内收银台地址 |
+| POST /api/order/{orderNo}/payment/demo/confirm/notify | 记录模拟付款，投递进程内签名通知并确认 |
+| POST /api/order/{orderNo}/payment/demo/confirm/query | 只记录模拟付款，等待买家主动查询 |
+| POST /api/order/{orderNo}/payment/query | 查演示回执并确认付款，返回本地状态 |
+
+接口均要求本人买家 JWT。POST 不接收金额或其他请求体。状态接口新增 `demoEnabled` 和 `channel`，演示支付单的通道为 `DEMO`。模拟付款回执持久化到 `t_demo_payment_trade`，进程重启后可补查。演示通知在同一个服务进程内投递与验签，服务器部署使用同站点 HTTPS 反向代理，不需要额外的外部通知入口。
+
+部署说明与验证见 [演示支付详细实现说明](../../基础模块后阶段计划/10.5-演示支付模块/详细实现说明.md)。
+
+## 阶段11：支付宝沙箱支付
+
+部署订单服务前将共享库迁移至 V9。订单服务默认关闭支付。联调时将订单服务的 `SPRING_PROFILES_ACTIVE` 设为 `dev,alipay-sandbox`，用进程环境变量配置 `.env.example` 中的 `XIAOKE_ALIPAY_*`。商户 PID、App ID、应用 PKCS#8 私钥和支付宝公钥取自同一沙箱应用，密钥变量使用单行 Base64。支付宝公钥由沙箱平台提供。网关限 HTTPS 沙箱白名单。带有 `prod` 或同时选择 `payment-test` 的配置不会装配沙箱通道。
+
+买家端从仓库根目录用 `pnpm dev` 启动。将 `XIAOKE_ALIPAY_BUYER_ORIGIN` 配为实际买家端 origin，默认 `http://127.0.0.1:5173`。配置 `XIAOKE_ALIPAY_NOTIFY_URL` 为公网可达的专用 HTTPS 地址，路径固定 `/api/payment/alipay/notify`。调试入口仅转发该路径的 POST 到 order 服务。浏览器回到订单页会调用商城查询，随后重读订单状态。Spring Boot 通过进程环境变量读取这些值。
+
+| 方法与路径 | 身份和输入 | 成功结果 |
+|---|---|---|
+| POST /api/order/{orderNo}/payment/alipay | 买家 JWT，无请求体或查询参数 | `paymentUrl`，支付宝沙箱签名收银台链接 |
+| GET /api/order/{orderNo}/payment | 买家 JWT，无查询参数 | 本地 `sandboxEnabled/canStart/state` |
+| POST /api/order/{orderNo}/payment/query | 买家 JWT，无请求体或查询参数 | 同上，待确认支付单先由服务端查支付宝 |
+| POST /api/payment/alipay/notify | 支付宝 RSA2 签名表单 | HTTP 200，纯文本 `success` 或 `failure` |
+| POST /api/order/{orderNo}/payment/wechat | 买家 JWT，无请求体或查询参数 | 通道禁用，返回 409 |
+
+状态 `NONE` 表示尚无支付单，`PENDING` 表示本地尚未确认付款，`SUCCEEDED` 表示已确认付款。收银台请求使用订单金额快照，同一订单复用同一支付单号。异步通知校验应用、卖家 PID、金额、订单和交易状态。主动查询通过该支付单绑定的直接商户应用发起签名请求，由 SDK 验证成功响应，再匹配支付单号与金额。两个入口均在一个事务内推进订单和支付单。支付宝返回未付款、已关闭或尚无交易时，商城继续保留支付单，等待阶段12协调关单。
+
+原 `POST /api/order/{orderNo}/pay` 仅供 `dev,payment-test` 回归测试。普通取消只允许无支付单的待付款订单。测试配置保留无支付单的旧模拟订单取消语义。有支付单的订单通过数据库行锁与发起支付串行检查，任何配置下均不能通过原入口直接取消。
+
 ## 阶段08：购物车
 
 购物车由 order 服务（8082）提供。所有请求使用买家 JWT，身份从登录上下文取得。接口拒绝额外的查询参数和 JSON 字段。
@@ -45,7 +78,7 @@
 | GET /api/order/page | 买家JWT | pageNum=1、pageSize=10、status? | 分页OrderSummaryVO |
 | GET /api/order/{orderNo} | 买家JWT | 14位订单号 | OrderDetailVO |
 | GET /api/order/{orderNo}/status | 买家JWT | 14位订单号 | 状态、物流、商品名与数量 |
-| POST /api/order/{orderNo}/pay | 买家JWT | 无body/query | null |
+| POST /api/order/{orderNo}/pay | 买家JWT + 独立 payment-test 配置 | 无body/query | null |
 | POST /api/order/{orderNo}/ship | 后台JWT + order:ship | logisticsCompany、trackingNo | null |
 | POST /api/order/{orderNo}/cancel | 买家JWT | 无body/query | null |
 

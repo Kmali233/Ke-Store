@@ -35,6 +35,15 @@ xiaoke:
     expiry-seconds: 7200
   local-admin-enabled: false
   local-admin-key: ${LOCAL_ADMIN_KEY:}
+  payment:
+    alipay:
+      gateway: ${XIAOKE_ALIPAY_GATEWAY:https://openapi-sandbox.dl.alipaydev.com/gateway.do}
+      app-id: ${XIAOKE_ALIPAY_APP_ID:}
+      seller-id: ${XIAOKE_ALIPAY_SELLER_ID:}
+      private-key: ${XIAOKE_ALIPAY_PRIVATE_KEY:}
+      public-key: ${XIAOKE_ALIPAY_PUBLIC_KEY:}
+      notify-url: ${XIAOKE_ALIPAY_NOTIFY_URL:}
+      buyer-origin: ${XIAOKE_ALIPAY_BUYER_ORIGIN:http://127.0.0.1:5173}
   order:
     product-base-url: ${PRODUCT_BASE_URL:http://127.0.0.1:8081/api}
     zone-id: Asia/Shanghai

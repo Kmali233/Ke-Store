@@ -287,6 +287,32 @@ CREATE TABLE `t_cart_item` (
   PRIMARY KEY (`user_id`,`sku_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='买家购物车SKU清单';
 
+CREATE TABLE `t_payment_order` (
+  `order_id` bigint NOT NULL,
+  `payment_no` char(32) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `channel` varchar(24) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `app_id` varchar(32) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `seller_id` varchar(32) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `total_amount` decimal(10,2) NOT NULL,
+  `status` varchar(16) CHARACTER SET ascii COLLATE ascii_bin NOT NULL DEFAULT 'PENDING',
+  `trade_no` varchar(64) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL,
+  `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `pay_time` datetime DEFAULT NULL,
+  CONSTRAINT `fk_payment_order` FOREIGN KEY (`order_id`) REFERENCES `t_orders` (`id`),
+  CONSTRAINT `chk_payment_amount` CHECK ((`total_amount` > 0)),
+  CONSTRAINT `chk_payment_state` CHECK ((((`status` = _utf8mb4'PENDING') and (`trade_no` is null) and (`pay_time` is null)) or ((`status` = _utf8mb4'SUCCEEDED') and (`trade_no` is not null) and (`pay_time` is not null)))),
+  PRIMARY KEY (`order_id`),
+  UNIQUE KEY `uk_payment_no` (`payment_no`),
+  UNIQUE KEY `uk_payment_trade` (`channel`,`trade_no`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='订单支付单';
+
+CREATE TABLE `t_demo_payment_trade` (
+  `payment_no` char(32) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT `fk_demo_trade_payment` FOREIGN KEY (`payment_no`) REFERENCES `t_payment_order` (`payment_no`),
+  PRIMARY KEY (`payment_no`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='演示收银台的已付款回执';
+
 INSERT INTO t_admin_role(id,code,name) VALUES
  (1,'system_admin','系统管理员'),(2,'product_admin','商品管理员'),
  (3,'fulfillment','履约人员'),(4,'after_sales','售后人员');

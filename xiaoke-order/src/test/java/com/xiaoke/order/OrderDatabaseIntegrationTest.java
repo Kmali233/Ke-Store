@@ -49,7 +49,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
     "spring.datasource.hikari.connection-init-sql=SET SESSION innodb_lock_wait_timeout=3",
     "spring.datasource.hikari.maximum-pool-size=12","xiaoke.local-admin-enabled=true","xiaoke.local-admin-key=order-test-admin",
     "xiaoke.jwt.secret-base64=MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="})
-@AutoConfigureMockMvc @ActiveProfiles("dev") @TestInstance(TestInstance.Lifecycle.PER_CLASS)
+@AutoConfigureMockMvc @ActiveProfiles({"dev","payment-test"}) @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class OrderDatabaseIntegrationTest {
     static final HttpServer HTTP;
     static final ExecutorService HTTP_POOL=Executors.newCachedThreadPool();
@@ -108,6 +108,7 @@ class OrderDatabaseIntegrationTest {
         jdbc=new JdbcTemplate(source);
     }
     @BeforeEach void reset() {
+        jdbc.update("DELETE FROM t_payment_order");
         jdbc.update("DELETE FROM t_cart_item");
         jdbc.update("DELETE FROM t_admin_audit");
         jdbc.update("DELETE FROM t_inventory_ledger"); jdbc.update("DELETE FROM t_inventory_adjustment");
