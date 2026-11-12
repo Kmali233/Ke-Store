@@ -76,5 +76,5 @@ async function logout() {
       <component :is="Component" :key="route.path" />
     </RouterView>
   </main>
-  <footer class="site-footer"><div class="shell">小Ke商城 <span>买家端 · 模拟支付环境</span></div></footer>
+  <footer class="site-footer"><div class="shell">小Ke商城 <span>买家端</span></div></footer>
 </template>

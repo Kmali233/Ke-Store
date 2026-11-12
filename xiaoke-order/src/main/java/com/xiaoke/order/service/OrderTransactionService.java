@@ -8,12 +8,14 @@ import com.xiaoke.order.dto.*;
 import com.xiaoke.order.entity.*;
 import com.xiaoke.order.enums.OrderStatus;
 import com.xiaoke.order.mapper.*;
+import com.xiaoke.order.payment.MockPaymentAdapter;
 import com.xiaoke.order.vo.OrderCreateVO;
 import com.xiaoke.order.idempotency.OrderIdempotency;
 import lombok.RequiredArgsConstructor;
 import com.xiaoke.audit.*;
 import static com.xiaoke.audit.AuditChanges.Field.*;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.ObjectProvider;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.*;
@@ -34,6 +36,8 @@ public class OrderTransactionService {
     private final OrderSkus skus;
     private final AuditWriter audit;
     private final CartService cart;
+    private final PaymentOrderMapper payments;
+    private final ObjectProvider<MockPaymentAdapter> mockPayment;
     public List<Long> productIds(OrderCreateDTO dto) {
         return skus.resolve(dto.getItems()).stream().map(OrderSkus.Selection::productId).distinct().sorted().toList();
     }
@@ -97,10 +101,13 @@ public class OrderTransactionService {
         });
     }
     public void payOnce(Long uid,String no) {
+        var mock=mockPayment.getIfAvailable();
+        if (mock==null) { throw new BusinessException(403,"模拟支付仅在独立测试模式可用"); }
         transactions.write(()->{
             users.lock(uid);
             var order=requireOrder(orders.lockOwned(uid,no));
-            if (status(order)!=OrderStatus.PENDING_PAYMENT || orders.casPay(order.getId(),uid)!=1) { throw conflict(); }
+            if (status(order)!=OrderStatus.PENDING_PAYMENT || payments.findByOrderId(order.getId())!=null
+                    || !mock.pay(order)) { throw conflict(); }
             return null;
         });
     }
@@ -117,7 +124,12 @@ public class OrderTransactionService {
         transactions.write(()->{
             users.lock(uid);
             var order=requireOrder(orders.lockOwned(uid,no)); var status=status(order);
-            if (status!=OrderStatus.PENDING_PAYMENT && status!=OrderStatus.PAID && status!=OrderStatus.PREPARING) { throw conflict(); }
+            if (payments.findByOrderId(order.getId())!=null) {
+                throw new BusinessException(409,"订单已有支付单，暂不支持直接取消");
+            }
+            boolean legacyTestCancel=mockPayment.getIfAvailable()!=null
+                    && (status==OrderStatus.PAID || status==OrderStatus.PREPARING);
+            if (status!=OrderStatus.PENDING_PAYMENT && !legacyTestCancel) { throw conflict(); }
             var snapshots=OrderItemRules.checked(order,items.selectAllByOrderId(order.getId()));
             for (Long pid:snapshots.stream().map(OrderItem::getProductId).distinct().sorted().toList()) {
                 var product=products.selectForUpdate(pid);

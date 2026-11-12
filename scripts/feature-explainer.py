@@ -15,14 +15,27 @@ if str(ROOT / "scripts") not in sys.path:
     sys.path.insert(0, str(ROOT / "scripts"))
 from idea_links import SCHEME as IDEA_SCHEME, parse_idea_url
 SKILL = ".agents/skills/feature-explainer/SKILL.md"
-OUTPUT = Path("output/功能实现讲解")
 SESSION_PATTERN = re.compile(r"[A-Za-z0-9_-]{1,128}\Z")
 PLANS_DIRECTORY = "基础模块后阶段计划"
 DOCUMENT_INSTRUCTION = (
-    "功能实现说明必须写为基础模块后阶段计划/<对应阶段目录>/详细实现说明.md；"
-    "登记时用 --stage 指定对应阶段目录，交付前同时检查该说明存在、非空且位置正确。"
+    "图文HTML和详细实现说明统一存放在仓库同级的基础模块后阶段计划/<对应阶段目录>/，"
+    "分别命名为<功能名称>.html和详细实现说明.md；"
+    "登记时用 --stage 指定对应阶段目录，按返回的路径生成，交付前检查两者存在、非空且位置正确。"
 )
-IDEA_INSTRUCTION = (
+SECTION_INTRO_INSTRUCTION = (
+    "每个主要业务讲解章节在标题下先用一句贴近用户操作的类比，说清这一节相当于什么，再讲实现细节。"
+)
+INTERVIEW_INSTRUCTION = (
+    "在主流程图中，按当前模块的真实实现选出最值得面试展开的步骤，标出“面试重点”并注明具体主题。"
+    "适合延伸的步骤可标为“可追问”。在对应步骤详情给出可能的面试追问和基于源码的简短答法，"
+    "并链接到相关讲解或源码索引。"
+)
+SOURCE_INDEX_INSTRUCTION = (
+    "“功能修改范围与源码阅读索引”按实际业务调用链分组，主讲操作放在最前。"
+    "每条链从入口按实际执行顺序向下编号，标明调用返回后继续的关键步骤。"
+    "其他业务场景各自成组，接口和验收资料放在最后。"
+    "在各业务调用链的核心源码链接后加醒目的“重点”标签，方便优先阅读。"
+    "每个重点下方另起一行，用短句或箭头流程写明这段代码的主要操作。"
     "源码索引默认点击后在已启动的 IDEA 中打开并定位到实际方法行："
     "核对当前源码行号，用 scripts/idea_links.py url 生成 xiaoke-idea:// 链接，"
     "旁边保留相对路径的“浏览器查看”入口，并检查目标文件与行号有效。"
@@ -64,11 +77,10 @@ def digest(path):
 
 
 def report_path(root, state):
+    directory = implementation_document(root, state.get("stage")).parent
     path = (root / state["html"]).resolve()
-    allowed = (root / OUTPUT).resolve()
-    if (not allowed.is_relative_to(root.resolve()) or not path.is_relative_to(allowed)
-            or path.suffix.lower() != ".html"):
-        raise ValueError("Report must stay inside output/功能实现讲解.")
+    if (path.parent != directory or path.name != state.get("name", "") + ".html"):
+        raise ValueError("Report must be named after the feature inside its registered 基础模块后阶段计划 stage")
     return path
 
 
@@ -193,7 +205,7 @@ def validate_report(root, state, fresh=True):
         if not target.is_file():
             raise ValueError("HTML contains a missing or out-of-project local file link")
         if not target.is_relative_to(root.resolve()):
-            plans = (root.parent / "基础模块后阶段计划").resolve()
+            plans = (root.parent / PLANS_DIRECTORY).resolve()
             if target.is_relative_to(plans) and target.suffix.lower() == ".md":
                 continue
             raise ValueError("HTML contains a missing or out-of-project local file link")
@@ -215,19 +227,19 @@ def require_report(root, session, name, stage=None):
         raise ValueError("Use a short feature name without path or Windows filename characters")
     existing = load_state(root, session)
     if existing and existing["status"] == "pending":
-        if existing["name"] == name:
-            if stage is not None and existing.get("stage") not in (None, stage):
-                raise ValueError("Finish the registered stage before switching document locations")
-            if not existing.get("stage"):
-                existing["stage"] = select_stage(root, name, stage)
-                existing["implementation_document"] = implementation_document(root, existing["stage"]).relative_to(root.parent).as_posix()
-                save_state(root, session, existing)
-            return existing
-        raise ValueError("Finish or explicitly defer the pending report before starting another")
-    state = {"name": name, "html": (OUTPUT / (name + ".html")).as_posix(),
-             "status": "pending", "recovery_requested": False}
-    state["stage"] = select_stage(root, name, stage)
+        if existing["name"] != name:
+            raise ValueError("Finish or explicitly defer the pending report before starting another")
+        if stage is not None and existing.get("stage") not in (None, stage):
+            raise ValueError("Finish the registered stage before switching document locations")
+        stage = stage or existing.get("stage")
+    state = {"name": name, "status": "pending", "recovery_requested": False,
+             "stage": select_stage(root, name, stage)}
     state["implementation_document"] = implementation_document(root, state["stage"]).relative_to(root.parent).as_posix()
+    destination = implementation_document(root, state["stage"]).with_name(name + ".html")
+    state["html"] = Path(os.path.relpath(destination, root)).as_posix()
+    if (existing and existing["status"] == "pending" and existing.get("html") == state["html"]
+            and existing.get("stage") == state["stage"]):
+        return existing
     state["baseline_sha256"] = digest(report_path(root, state))
     if state["baseline_sha256"]:
         backup = root / "output/.feature-explainer/backups" / (name + "-" + state["baseline_sha256"] + ".html")
@@ -270,7 +282,9 @@ def hook(payload, root=ROOT):
             "本项目已配置功能完成后的 HTML 图文讲解流程。只在新功能/模块/阶段实现完成并确认实际验证状态后，"
             f"读取 {SKILL}，执行 scripts/feature-explainer.py 的 require、生成图文 HTML、验证并 complete。"
             "用一条真实操作讲实现，复用技能内参考页的图文风格；有实际问题再写解决过程。"
-            f"{IDEA_INSTRUCTION}"
+            f"{SECTION_INTRO_INSTRUCTION}"
+            f"{INTERVIEW_INSTRUCTION}"
+            f"{SOURCE_INDEX_INSTRUCTION}"
             f"{DOCUMENT_INSTRUCTION}"
             "普通问答、计划、代码审查、提交推送及本流程自身维护不触发；用户本次明确不需要 HTML 时遵从用户。"
             f"本次 hook session_id={session}，登记和交付检查请显式使用此 ID。"
@@ -293,7 +307,9 @@ def hook(payload, root=ROOT):
             f"已登记完成的功能“{state['name']}”的实现说明或 HTML 交付尚未齐全：{error}。"
             f"请读取 {SKILL}，基于当前源码生成 {state['html']}，检查图文与交互后执行 "
             f"python scripts/feature-explainer.py complete --session-id {session}，再交付文件链接。"
-            f"{IDEA_INSTRUCTION}"
+            f"{SECTION_INTRO_INSTRUCTION}"
+            f"{INTERVIEW_INSTRUCTION}"
+            f"{SOURCE_INDEX_INSTRUCTION}"
             f"{DOCUMENT_INSTRUCTION}"
             "只补齐已授权的讲解产物；如确实无法生成或用户已取消，请使用 defer 并如实说明。"
             "这是一次性的补漏检查，不重复执行已通过的业务测试。"

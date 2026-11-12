@@ -1,6 +1,7 @@
 """Exercise report handoff and native hook contracts using isolated local fixtures."""
 import importlib.util
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -43,13 +44,14 @@ class FeatureExplainerTest(unittest.TestCase):
             document.write_text("# 测试功能实现说明\n\n实现内容、修改文件与实际验证记录。\n", encoding="utf-8")
         path = workflow.report_path(self.root, state)
         path.parent.mkdir(parents=True, exist_ok=True)
+        source_href = Path(os.path.relpath(self.root / "source.java", path.parent)).as_posix()
         path.write_text(f'''<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
 <title>{state['name']} · 实现讲解</title></head><body>
 <h1>{state['name']}</h1><h2 id="flow">调用链</h2>
 <svg viewBox="0 0 300 100" role="img"><title>请求到数据库</title>
 <text x="10" y="30">请求 → 服务 → 数据库</text></svg>
 <h2>数据变化</h2><p>示例业务值在同一事务中更新。</p>
-<h2>验证与源码</h2><a href="../../source.java">Example.java</a>
+<h2>验证与源码</h2><a href="{source_href}">Example.java</a>
 <a href="#flow">回到调用链</a>{extra}</body></html>''', encoding="utf-8")
         return path
 
@@ -61,6 +63,11 @@ class FeatureExplainerTest(unittest.TestCase):
         output = workflow.hook(self.payload("UserPromptSubmit", prompt="Synthetic-Private-Prompt"), self.root)
         context = output["hookSpecificOutput"]["additionalContext"]
         self.assertIn(self.session, context)
+        self.assertIn("在标题下先用一句贴近用户操作的类比", context)
+        self.assertIn("标出“面试重点”并注明具体主题", context)
+        self.assertIn("可能的面试追问和基于源码的简短答法", context)
+        self.assertIn("核心源码链接后加醒目的“重点”标签", context)
+        self.assertIn("每个重点下方另起一行", context)
         self.assertNotIn("Synthetic-Private-Prompt", json.dumps(output))
         self.assertFalse(workflow.state_path(self.root, self.session).exists())
 
@@ -68,6 +75,11 @@ class FeatureExplainerTest(unittest.TestCase):
         self.require()
         first = workflow.hook(self.payload(), self.root)
         self.assertEqual(first["decision"], "block")
+        self.assertIn("在标题下先用一句贴近用户操作的类比", first["reason"])
+        self.assertIn("标出“面试重点”并注明具体主题", first["reason"])
+        self.assertIn("可能的面试追问和基于源码的简短答法", first["reason"])
+        self.assertIn("核心源码链接后加醒目的“重点”标签", first["reason"])
+        self.assertIn("每个重点下方另起一行", first["reason"])
         second = workflow.hook(self.payload(stop_hook_active=True), self.root)
         self.assertNotIn("decision", second)
         self.assertEqual(workflow.load_state(self.root, self.session)["status"], "deferred")
@@ -91,8 +103,8 @@ class FeatureExplainerTest(unittest.TestCase):
         self.assertEqual(workflow.load_state(self.root, self.session)["status"], "complete")
 
     def test_unchanged_old_report_is_rejected_and_backed_up(self):
-        old = {"name": "测试功能", "html": "output/功能实现讲解/测试功能.html"}
-        path = self.write_report(old)
+        path = self.write_report(self.require())
+        workflow.complete_report(self.root, self.session)
         before = path.read_bytes()
         state = self.require()
         self.assertEqual((self.root / state["backup"]).read_bytes(), before)
@@ -150,11 +162,43 @@ class FeatureExplainerTest(unittest.TestCase):
         (self.root / "unrelated.md").write_text("# Other", encoding="utf-8")
         self.root = checkout
         state = self.require()
-        self.write_report(state, '<a href="../../../基础模块后阶段计划/06-管理操作审计模块/详细实现说明.md">说明</a>')
+        report = workflow.report_path(self.root, state)
+        doc_href = Path(os.path.relpath(plans / "详细实现说明.md", report.parent)).as_posix()
+        other_href = Path(os.path.relpath(self.root.parent / "unrelated.md", report.parent)).as_posix()
+        self.write_report(state, '<a href="' + doc_href + '">说明</a>')
         self.assertEqual(workflow.complete_report(self.root, self.session)["status"], "complete")
-        self.write_report(state, '<a href="../../../unrelated.md">Other</a>')
+        self.write_report(state, '<a href="' + other_href + '">Other</a>')
         with self.assertRaises(ValueError):
             workflow.complete_report(self.root, self.session)
+
+    def test_report_and_document_are_registered_in_the_same_stage_directory(self):
+        state = self.require()
+        report = workflow.report_path(self.root, state)
+        document = workflow.implementation_document(self.root, state["stage"])
+        self.assertEqual(report.parent, document.parent)
+        self.assertEqual(report.name, "测试功能.html")
+        self.assertEqual((self.root / state["html"]).resolve(), report)
+        self.write_report(state, '<a href="详细实现说明.md">实现说明</a>')
+        self.assertEqual(workflow.complete_report(self.root, self.session)["status"], "complete")
+
+    def test_report_in_old_output_folder_or_another_stage_cannot_complete(self):
+        state = self.require()
+        for html in ("output/功能实现讲解/测试功能.html", "../基础模块后阶段计划/02-other/测试功能.html"):
+            with self.subTest(html=html), self.assertRaisesRegex(ValueError, "registered"):
+                workflow.report_path(self.root, {**state, "html": html})
+
+    def test_old_pending_registration_switches_destination_without_moving_history(self):
+        state = self.require()
+        legacy = self.root / "output/功能实现讲解/测试功能.html"
+        legacy.parent.mkdir(parents=True)
+        legacy.write_text("previous report", encoding="utf-8")
+        state.update(html=legacy.relative_to(self.root).as_posix(), baseline_sha256=workflow.digest(legacy))
+        workflow.save_state(self.root, self.session, state)
+        updated = self.require()
+        self.assertEqual(workflow.report_path(self.root, updated).parent,
+                         workflow.implementation_document(self.root, updated["stage"]).parent)
+        self.assertIsNone(updated["baseline_sha256"])
+        self.assertEqual(legacy.read_text(encoding="utf-8"), "previous report")
 
     def test_missing_or_misplaced_document_blocks_delivery_even_when_html_is_ready(self):
         state = self.require()

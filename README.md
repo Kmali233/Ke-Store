@@ -1,6 +1,10 @@
 # 小Ke商城（xiaoke-mall）
 
-阶段10运营管理端位于 `frontend/admin`。从仓库根目录运行 `pnpm install --frozen-lockfile`、`pnpm dev:admin`，打开 `http://127.0.0.1:5174`。使用已迁移至 V8 的共享商城库，启动商品、订单和后台身份服务。product 与 order 需要开启后台认证，三者使用同一份独立的后台 JWT 密钥。详见[后台管理端实现说明](../基础模块后阶段计划/10-后台管理端模块/详细实现说明.md)。
+阶段10.5提供可在独立测试实例运行的演示收银台。买家在浏览器内模拟付款，由商城验签或补查后更新订单。环境隔离与服务器接入见[演示支付说明](../基础模块后阶段计划/10.5-演示支付模块/详细实现说明.md)。
+
+阶段11买家端支持支付宝电脑网站沙箱支付。订单服务使用迁移至 V9 的共享商城库，配置 `dev,alipay-sandbox` 后可从订单详情打开收银台。启用条件、接口和回调地址见[订单服务支付说明](xiaoke-order/README.md#阶段11支付宝沙箱支付)。
+
+阶段10运营管理端位于 `frontend/admin`。从仓库根目录运行 `pnpm install --frozen-lockfile`、`pnpm dev:admin`，打开 `http://127.0.0.1:5174`。启动商品、订单和后台身份服务。product 与 order 需要开启后台认证，三者使用同一份独立的后台 JWT 密钥。详见[后台管理端实现说明](../基础模块后阶段计划/10-后台管理端模块/详细实现说明.md)。
 
 阶段07库存调整与流水：product 提供后台 SKU 调整、流水分页与余额核对，要求 `inventory:adjust`；订单扣减/取消恢复与流水同事务。新建 SKU 同时写期初，升级先停旧写入并迁移至 V7。见[库存接口与账本说明](xiaoke-product/docs/库存接口.md)、[详细实现说明](../基础模块后阶段计划/07-库存调整与流水模块/详细实现说明.md)；完整隔离验收：`python scripts/verify-inventory.py`。退款流水类型预留，退款业务属后续阶段。
 
@@ -177,7 +181,7 @@ xiaoke-mall/                          # 父工程 (packaging=pom)：聚合子模
 │       └── config                    # CorsConfig(跨域)、MybatisPlusConfig(分页)
 ├── xiaoke-product/                   # 商品服务（端口 8081）✅ 商品、搜索、分类、参数共12接口
 ├── xiaoke-user/                      # 用户服务（端口 8083）✅ 注册、登录、me、地址五接口
-├── xiaoke-order/                     # 订单服务（端口 8082）✅ 创建、查询、模拟支付、发货、取消七接口
+├── xiaoke-order/                     # 订单服务（端口 8082） 创建、查询、沙箱支付、发货、取消
 ├── xiaoke-admin/                     # 后台身份（端口 8085）登录、身份、退出、离线初始化/恢复
 ├── xiaoke-ai/                        # AI 客服 BFF（端口 8084）         ⏳ M3
 ├── sql/xiaoke_mall.sql               # 建库建表脚本
@@ -236,7 +240,7 @@ xiaoke-mall/                          # 父工程 (packaging=pom)：聚合子模
 
 订单接口为 `POST /api/order`、`GET /api/order/idempotency/{key}`、`GET /api/order/page`、`GET /api/order/{orderNo}`、`GET /api/order/{orderNo}/status`、`POST /api/order/{orderNo}/pay`、`POST /api/order/{orderNo}/ship`、`POST /api/order/{orderNo}/cancel`。七个买家接口使用原始JWT；ship使用后台JWT及 `order:ship` 权限。完整契约、收货二选一、库存事务和阅读顺序见 [xiaoke-order/README.md](xiaoke-order/README.md)。
 
-订单快照、库存扣减/恢复和下单件数使用同库事务；order通过自有适配Mapper访问关联表，不依赖user/product业务jar。阶段02支持 `Idempotency-Key`：同用户同键同内容返回首次创建结果，同键异参409；旧客户端不带键仍可能创建多单。需先应用V2迁移，键永久保留。模拟支付/取消不涉及真实资金。实现与验收见 [详细实现说明](xiaoke-order/详细实现说明.md)。
+订单快照、库存扣减/恢复和下单件数使用同库事务。order 通过自有适配 Mapper 访问关联表。阶段02支持 `Idempotency-Key`：同用户同键同内容返回首次创建结果，同键异参409；旧客户端不带键仍可能创建多单。需先应用V2迁移，键永久保留。沙箱支付确认在同一事务内更新支付单和订单，配置及契约见[订单服务说明](xiaoke-order/README.md)。
 
 真实订单数据库测试需要 `XIAOKE_ORDER_DB_TESTS=true` 和 `XIAOKE_ORDER_TEST_DB_URL`，仅允许专用 `xiaoke_order_verify_*` 库。测试会清空该库并注入故障，默认跳过。阶段02完整复现入口为 `python scripts/verify-idempotency.py`，包括隔离数据库、迁移、全部JUnit和双订单进程HTTP并发与故障验证。
 

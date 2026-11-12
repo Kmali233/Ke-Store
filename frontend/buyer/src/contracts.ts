@@ -113,3 +113,11 @@ export interface OrderDetail extends OrderSummary {
     amount: number
   }[]
 }
+
+export interface PaymentStatus {
+  sandboxEnabled: boolean
+  demoEnabled: boolean
+  canStart: boolean
+  state: 'NONE' | 'PENDING' | 'SUCCEEDED'
+  channel: 'ALIPAY_SANDBOX' | 'DEMO' | null
+}

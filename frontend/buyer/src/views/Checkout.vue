@@ -182,7 +182,7 @@ async function retry() {
       <aside class="panel padded stack checkout-summary">
         <h2>结算金额</h2>
         <strong class="price large">{{ money(cartTotal(data.selected)) }}</strong>
-        <p class="muted">此处为参考合计，实际金额以订单为准。下单后可体验模拟支付。</p>
+        <p class="muted">此处为参考合计，实际金额以订单为准。下单后可在订单详情查看付款方式。</p>
         <p v-if="!eligible" class="notice">请返回购物车调整库存不足、失效商品或超过 20 种的勾选项。</p>
         <button type="submit" :disabled="busy || !addressId || !eligible || !!storageError">提交订单</button>
       </aside>

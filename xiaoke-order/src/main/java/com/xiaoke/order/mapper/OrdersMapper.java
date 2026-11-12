@@ -11,6 +11,8 @@ public interface OrdersMapper extends BaseMapper<Orders> {
     Orders lockOwned(@Param("uid") Long uid,@Param("no") String no);
     @Select("SELECT * FROM t_orders WHERE order_no=#{no} AND deleted=0 FOR UPDATE")
     Orders lockByNo(@Param("no") String no);
+    @Select("SELECT * FROM t_orders WHERE id=#{id} AND deleted=0 FOR UPDATE")
+    Orders lockById(Long id);
     String OWNED="WHERE user_id=#{uid} AND deleted=0 <if test='status != null'>AND status=#{status}</if>";
     @Select("<script>SELECT COUNT(*) FROM t_orders "+OWNED+"</script>")
     long countOwned(@Param("uid") Long uid,@Param("status") Integer status);

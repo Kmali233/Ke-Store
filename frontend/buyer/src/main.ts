@@ -18,6 +18,7 @@ const router = createRouter({
     { path: '/addresses', component: () => import('./views/Addresses.vue'), meta: { buyer: true } },
     { path: '/checkout', component: () => import('./views/Checkout.vue'), meta: { buyer: true } },
     { path: '/orders', component: () => import('./views/Orders.vue'), meta: { buyer: true } },
+    { path: '/orders/:number(\\d+)/demo-checkout', component: () => import('./views/DemoCheckout.vue'), meta: { buyer: true } },
     { path: '/orders/:number(\\d+)', component: () => import('./views/Order.vue'), meta: { buyer: true } },
     { path: '/:pathMatch(.*)*', redirect: '/' },
   ],

@@ -220,4 +220,12 @@ V7 新增 `t_inventory_adjustment` 和 `t_inventory_ledger`，V1—V6保持原�
 
 `V8__shopping_cart.sql` 新增空表 `t_cart_item`，已有商品、订单和回执无需回填。联合主键 `(user_id, sku_id)` 保证每个买家每个 SKU 只有一行，CHECK 限制数量为 1–999、勾选值为 0 或 1。购物车保留失效的 SKU 关联供买家查看或移除。
 
+### V9 支付单
+
+`V9__alipay_sandbox_payment.sql` 新增空表 `t_payment_order`，由外键关联订单。每个订单最多一张支付单，商户支付单号全表唯一，支付宝交易号在通道内唯一。支付单保存金额快照、通道和应用与卖家标识。已有订单无需回填。部署时先停止旧版订单写服务，备份并应用 V9 后启动新版，避免旧版取消逻辑绕过支付单检查。支付单需要保留供重试、回调和补查使用。
+
+### V10 演示支付回执
+
+`V10__demo_payment_trade.sql` 新增空表 `t_demo_payment_trade`，通过 `payment_no` 唯一关联支付单。仅独立演示配置写入该表。先保存模拟收银台回执，再投递签名通知或等待主动查询。已有订单与支付单无需回填。
+
 先通过现有维护入口应用迁移，再部署 order 服务。购物车和订单在同一数据源，结算成功时和订单、库存流水、幂等回执一起提交。迁移回放及测试结构校验可运行 `python scripts/sync-test-schemas.py --check`。
