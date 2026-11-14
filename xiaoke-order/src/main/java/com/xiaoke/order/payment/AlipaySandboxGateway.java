@@ -4,8 +4,14 @@ import com.alipay.api.AlipayApiException;
 import com.alipay.api.AlipayClient;
 import com.alipay.api.AlipayConfig;
 import com.alipay.api.DefaultAlipayClient;
+import com.alipay.api.domain.AlipayTradeCloseModel;
+import com.alipay.api.domain.AlipayTradeFastpayRefundQueryModel;
+import com.alipay.api.domain.AlipayTradeRefundModel;
+import com.alipay.api.request.AlipayTradeFastpayRefundQueryRequest;
+import com.alipay.api.request.AlipayTradeRefundRequest;
 import com.alipay.api.domain.AlipayTradePagePayModel;
 import com.alipay.api.domain.AlipayTradeQueryModel;
+import com.alipay.api.request.AlipayTradeCloseRequest;
 import com.alipay.api.request.AlipayTradePagePayRequest;
 import com.alipay.api.request.AlipayTradeQueryRequest;
 import com.xiaoke.common.exception.BusinessException;
@@ -13,12 +19,14 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
+import java.math.BigDecimal;
 import java.net.URI;
 import java.security.KeyFactory;
 import java.security.interfaces.RSAKey;
 import java.security.spec.PKCS8EncodedKeySpec;
 import java.security.spec.X509EncodedKeySpec;
 import java.util.Base64;
+import java.time.LocalDateTime;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -69,12 +77,17 @@ public class AlipaySandboxGateway implements PaymentGateway {
     }
 
     @Override
-    public String checkout(PaymentOrder payment, String orderNo) {
+    public String checkout(PaymentOrder payment, String orderNo, LocalDateTime expiresAtUtc) {
         var model = new AlipayTradePagePayModel();
         model.setOutTradeNo(payment.paymentNo());
         model.setTotalAmount(payment.totalAmount().toPlainString());
         model.setSubject("小Ke商城沙箱订单 " + orderNo);
         model.setProductCode("FAST_INSTANT_TRADE_PAY");
+        if (expiresAtUtc != null) {
+            model.setTimeExpire(expiresAtUtc.atOffset(java.time.ZoneOffset.UTC)
+                    .atZoneSameInstant(java.time.ZoneId.of("Asia/Shanghai"))
+                    .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
+        }
         var request = new AlipayTradePagePayRequest();
         request.setBizModel(model);
         request.setNotifyUrl(notifyUrl);
@@ -116,6 +129,75 @@ public class AlipaySandboxGateway implements PaymentGateway {
             return Optional.of(new Trade(account, result.getOutTradeNo(), result.getTradeNo(),
                     result.getTotalAmount(), parseState(result.getTradeStatus())));
         } catch (AlipayApiException ex) {
+            throw unavailable();
+        }
+    }
+
+    @Override
+    public boolean closeUnpaid(PaymentOrder payment) {
+        var model = new AlipayTradeCloseModel();
+        model.setOutTradeNo(payment.paymentNo());
+        var request = new AlipayTradeCloseRequest();
+        request.setBizModel(model);
+        try {
+            var result = client.execute(request);
+            return result != null && result.isSuccess() && payment.paymentNo().equals(result.getOutTradeNo());
+        } catch (AlipayApiException ex) {
+            throw unavailable();
+        }
+    }
+
+    @Override
+    public void submitRefund(PaymentOrder payment, String refundNo, BigDecimal amount) {
+        var model = new AlipayTradeRefundModel();
+        model.setOutTradeNo(payment.paymentNo());
+        model.setOutRequestNo(refundNo);
+        model.setRefundAmount(amount.toPlainString());
+        var request = new AlipayTradeRefundRequest();
+        request.setBizModel(model);
+        try {
+            var response = client.execute(request);
+            if (response == null || !response.isSuccess()) {
+                throw unavailable();
+            }
+        } catch (AlipayApiException failure) {
+            throw unavailable();
+        }
+    }
+
+    @Override
+    public Optional<RefundTrade> queryRefund(PaymentOrder payment, String refundNo) {
+        var model = new AlipayTradeFastpayRefundQueryModel();
+        model.setOutTradeNo(payment.paymentNo());
+        model.setOutRequestNo(refundNo);
+        var request = new AlipayTradeFastpayRefundQueryRequest();
+        request.setBizModel(model);
+        try {
+            var response = client.execute(request);
+            if (response == null) {
+                throw unavailable();
+            }
+            if (!response.isSuccess()) {
+                if ("ACQ.TRADE_NOT_EXIST".equals(response.getSubCode())) {
+                    return Optional.empty();
+                }
+                throw unavailable();
+            }
+            String amount = response.getRefundAmount();
+            String state = response.getRefundStatus();
+            String errorCode = response.getErrorCode();
+            boolean failed = errorCode != null && !errorCode.isBlank();
+            if ((state == null || state.isBlank()) && !failed) {
+                // An accepted query without a refund status can precede channel settlement.
+                return Optional.empty();
+            }
+            var result = "REFUND_SUCCESS".equals(state) ? RefundState.SUCCEEDED
+                    : failed ? RefundState.FAILED : RefundState.PROCESSING;
+            var parsedAmount = amount != null && amount.matches("[0-9]{1,9}(\\.[0-9]{1,2})?")
+                    ? new BigDecimal(amount) : null;
+            return Optional.of(new RefundTrade(account, response.getOutTradeNo(), response.getTradeNo(),
+                    response.getOutRequestNo(), parsedAmount, result));
+        } catch (AlipayApiException failure) {
             throw unavailable();
         }
     }

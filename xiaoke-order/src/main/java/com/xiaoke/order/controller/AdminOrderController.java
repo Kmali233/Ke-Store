@@ -7,6 +7,7 @@ import com.xiaoke.common.result.Result;
 import com.xiaoke.common.web.AllowedQuery;
 import com.xiaoke.order.dto.AdminOrderQueryDTO;
 import com.xiaoke.order.service.OrderQueryService;
+import com.xiaoke.order.service.OrderCloseService;
 import com.xiaoke.order.vo.AdminOrderDetailVO;
 import com.xiaoke.order.vo.OrderSummaryVO;
 import jakarta.validation.Valid;
@@ -18,16 +19,24 @@ import org.springframework.web.bind.annotation.*;
 @RequiredArgsConstructor
 public class AdminOrderController {
     private final OrderQueryService queries;
+    private final OrderCloseService closes;
+
+    @GetMapping("/{orderNo}/close-record")
+    @AdminPermission(AdminPermissions.ORDER_READ)
+    @AllowedQuery({})
+    public Result<OrderCloseService.Record> closeRecord(@PathVariable String orderNo) {
+        return Result.success(closes.record(orderNo));
+    }
 
     @GetMapping("/page")
-    @AdminPermission(AdminPermissions.ORDER_SHIP)
+    @AdminPermission(AdminPermissions.ORDER_READ)
     @AllowedQuery({"pageNum", "pageSize", "status", "orderNo"})
     public Result<IPage<OrderSummaryVO>> page(@Valid AdminOrderQueryDTO query) {
         return Result.success(queries.pageForAdmin(query));
     }
 
     @GetMapping("/{orderNo}")
-    @AdminPermission(AdminPermissions.ORDER_SHIP)
+    @AdminPermission(AdminPermissions.ORDER_READ)
     @AllowedQuery({})
     public Result<AdminOrderDetailVO> detail(@PathVariable String orderNo) {
         return Result.success(queries.detailForAdmin(orderNo));

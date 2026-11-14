@@ -6,6 +6,5 @@ public interface OrderCommandService {
     OrderCreateVO create(Long uid,OrderCreateDTO dto,String idempotencyKey);
     OrderCreateVO creationResult(Long uid,String idempotencyKey);
     void pay(Long uid,String no);
-    void ship(String no,OrderShipDTO dto);
     void cancel(Long uid,String no);
 }

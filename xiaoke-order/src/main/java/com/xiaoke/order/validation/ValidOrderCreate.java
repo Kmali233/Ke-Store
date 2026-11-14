@@ -9,7 +9,7 @@ import java.lang.annotation.*;
 @Retention(RetentionPolicy.RUNTIME)
 @Constraint(validatedBy=OrderCreateValidator.class)
 public @interface ValidOrderCreate {
-    String message() default "收货来源或商品列表不合法";
+    String message() default "订单请求或商品列表不合法";
     Class<?>[] groups() default {};
     Class<? extends Payload>[] payload() default {};
 }

@@ -25,12 +25,13 @@ public class OrderCommandFacade implements OrderCommandService {
     private final OrderTransactions transactions;
     private final OrderIdempotency idempotency;
     private final Clock clock;
+    private final OrderCloseService closes;
     private final ZoneId zone;
     public OrderCommandFacade(OrderInput input,OrderUsers users,ProductDetailHttpClient http,OrderTransactionService writes,
-            OrderTransactions transactions,Clock clock,OrderProperties properties,OrderIdempotency idempotency) {
+            OrderTransactions transactions,Clock clock,OrderProperties properties,OrderIdempotency idempotency,OrderCloseService closes) {
         this.input=input; this.users=users; this.http=http; this.writes=writes; this.transactions=transactions;
         this.clock=clock; this.zone=ZoneId.of(properties.getZoneId());
-        this.idempotency=idempotency;
+        this.idempotency=idempotency; this.closes=closes;
     }
     public OrderCreateVO create(Long uid,OrderCreateDTO dto) {
         return create(uid,dto,null);
@@ -82,8 +83,7 @@ public class OrderCommandFacade implements OrderCommandService {
         } finally { lock.unlock(); }
     }
     public void pay(Long uid,String no) { input.orderNo(no); writes.payOnce(uid,no); }
-    public void ship(String no,OrderShipDTO dto) { input.orderNo(no); input.check(dto); writes.shipOnce(no,dto); }
-    public void cancel(Long uid,String no) { input.orderNo(no); writes.cancelOnce(uid,no); }
+    public void cancel(Long uid,String no) { input.orderNo(no); closes.cancel(uid,no); }
     static boolean orderNumberCollision(Throwable failure) {
         if (DatabaseFailures.outcomeUnknown(failure)) { return false; }
         return DatabaseFailures.causes(failure).stream().anyMatch(cause->cause instanceof SQLException sql

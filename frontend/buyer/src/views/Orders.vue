@@ -19,7 +19,7 @@ function move(next: number) {
 </script>
 
 <template>
-  <header class="page-title"><p class="eyebrow">订单记录</p><h1>我的订单</h1><p class="muted">查看订单状态、商品和收货信息。</p></header>
+  <header class="page-title"><p class="eyebrow">订单记录</p><h1>我的订单</h1><p class="muted">查看订单状态和已购商品。</p></header>
   <LoadState :loading="loading" :error="error" @retry="refresh">
     <div v-if="data?.records.length" class="panel line-list">
       <RouterLink v-for="order in data.records" :key="order.orderNo" class="order-row split" :to="'/orders/' + order.orderNo">

@@ -4,6 +4,8 @@ import com.alipay.api.internal.util.AlipaySignature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.xiaoke.common.auth.JwtService;
 import com.xiaoke.order.OrderApplication;
+import com.xiaoke.order.service.OrderCloseService;
+import com.xiaoke.common.exception.BusinessException;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -55,6 +57,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 @EnabledIfEnvironmentVariable(named = "XIAOKE_PAYMENT_DB_TESTS", matches = "true")
 @SpringBootTest(classes = OrderApplication.class, webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
         properties = {
+                "xiaoke.order.close-scan-delay-ms=3600000",
                 "spring.datasource.username=root", "spring.datasource.password=",
                 "xiaoke.jwt.secret-base64=MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=",
                 "xiaoke.payment.alipay.app-id=2026110900000001",
@@ -80,6 +83,7 @@ class PaymentDatabaseIntegrationTest {
     @Autowired JwtService jwt;
     @Autowired MockMvc mvc;
     @Autowired ObjectMapper json;
+    @Autowired OrderCloseService closes;
     @SpyBean AlipaySandboxGateway gateway;
     @LocalServerPort int port;
     String buyerToken;
@@ -111,6 +115,7 @@ class PaymentDatabaseIntegrationTest {
 
     @BeforeEach
     void order() {
+        doReturn(Optional.empty()).when(gateway).query(any());
         db.update("DELETE FROM t_inventory_ledger");
         db.update("DELETE FROM t_payment_order");
         db.update("DELETE FROM t_order_item");
@@ -258,6 +263,116 @@ class PaymentDatabaseIntegrationTest {
         assertThat(orderState()).isEqualTo(5);
         assertThat(db.queryForObject("SELECT COUNT(*) FROM t_payment_order", Integer.class)).isZero();
         assertStock(10, 0);
+    }
+
+    @Test
+    void dueScannersAndBuyerOnlyCloseAndRestoreOnce() throws Exception {
+        db.update("UPDATE t_orders SET payment_expires_at=UTC_TIMESTAMP()+INTERVAL 1 HOUR WHERE id=1");
+        assertThat(checkout().path("time_expire").asText()).matches("[0-9-]+ [0-9:]+");
+        expire();
+        assertThat(status(post(PAYMENT + "/alipay"))).isEqualTo(409);
+        doReturn(Optional.of(waitingTrade())).when(gateway).query(any());
+        var ready = new CountDownLatch(1);
+        var scanned = new CountDownLatch(1);
+        doAnswer(call -> {
+            ready.countDown();
+            assertThat(scanned.await(5, TimeUnit.SECONDS)).isTrue();
+            return true;
+        }).when(gateway).closeUnpaid(any());
+        race(() -> { closes.scan(); return null; }, () -> {
+            assertThat(ready.await(5, TimeUnit.SECONDS)).isTrue();
+            try {
+                closes.scan();
+                assertThat(status(post(API + "/cancel"))).isEqualTo(409);
+                assertStock(9, 1);
+            } finally {
+                scanned.countDown();
+            }
+            return null;
+        });
+        closes.scan();
+        assertThat(paymentState()).isEqualTo("CLOSED");
+        assertThat(orderState()).isEqualTo(5);
+        assertStock(10, 0);
+        assertThat(db.queryForObject("SELECT COUNT(*) FROM t_inventory_ledger WHERE event_type='CANCEL_RESTORE'",
+                Integer.class)).isEqualTo(1);
+        assertThat(closes.record(ORDER).attempts()).isEqualTo(1);
+    }
+
+    @Test
+    void callbackWinsWhileScannerIsWaitingAndInventoryStaysReserved() throws Exception {
+        checkout();
+        expire();
+        var success = sign(notification("TRADE_SUCCESS", TRADE));
+        var waiting = new CountDownLatch(1);
+        var notified = new CountDownLatch(1);
+        doReturn(Optional.of(waitingTrade())).when(gateway).query(any());
+        doAnswer(call -> {
+            waiting.countDown();
+            assertThat(notified.await(5, TimeUnit.SECONDS)).isTrue();
+            return false;
+        }).when(gateway).closeUnpaid(any());
+        race(() -> { closes.scan(); return null; }, () -> {
+            assertThat(waiting.await(5, TimeUnit.SECONDS)).isTrue();
+            try {
+                assertThat(notify(success)).isEqualTo("success");
+                assertThat(status(post(API + "/cancel"))).isEqualTo(409);
+            } finally {
+                notified.countDown();
+            }
+            return null;
+        });
+        assertPaid();
+        assertStock(9, 1);
+        assertThat(closes.record(ORDER).resolution()).isEqualTo("PAID");
+    }
+
+    @Test
+    void unknownAndExpiredLeaseAreRetriedWithoutPrematureRelease() throws Exception {
+        checkout();
+        closes.scan(); // Migrated rows have no automatic deadline.
+        assertThat(db.queryForObject("SELECT close_attempts FROM t_orders", Integer.class)).isZero();
+        assertThat(status(post(API + "/cancel"))).isEqualTo(409); // Trade does not exist yet.
+        assertStock(9, 1);
+        expireLease();
+        doAnswer(call -> { throw new BusinessException(503, "gateway timeout"); }).when(gateway).query(any());
+        closes.scan();
+        assertStock(9, 1);
+        assertThat(closes.record(ORDER).resolution()).isEqualTo("PROCESSING");
+        assertThat(closes.record(ORDER).attempts()).isEqualTo(2);
+
+        expireLease(); // A new worker takes over after a persisted claim outlives its worker.
+        doReturn(Optional.of(new PaymentGateway.Trade(gateway.account(), paymentNo(), TRADE, "12.34",
+                PaymentGateway.TradeState.TRADE_CLOSED))).when(gateway).query(any());
+        closes.scan();
+        assertStock(10, 0);
+        assertThat(paymentState()).isEqualTo("CLOSED");
+        assertThat(closes.record(ORDER).reason()).isEqualTo("BUYER");
+        assertThat(closes.record(ORDER).attempts()).isEqualTo(3);
+    }
+
+    @Test
+    void scannerClosesDueOrderWithoutPayment() {
+        expire();
+        closes.scan();
+        closes.scan();
+        assertThat(orderState()).isEqualTo(5);
+        assertStock(10, 0);
+        assertThat(closes.record(ORDER).reason()).isEqualTo("TIMEOUT");
+    }
+
+    private PaymentGateway.Trade waitingTrade() {
+        return new PaymentGateway.Trade(gateway.account(), paymentNo(), TRADE, "12.34",
+                PaymentGateway.TradeState.WAIT_BUYER_PAY);
+    }
+
+    private void expire() {
+        db.update("UPDATE t_orders SET payment_expires_at=UTC_TIMESTAMP()-INTERVAL 1 SECOND WHERE id=1");
+        expireLease();
+    }
+
+    private void expireLease() {
+        db.update("UPDATE t_orders SET close_next_attempt_at=UTC_TIMESTAMP()-INTERVAL 1 SECOND WHERE id=1");
     }
 
     private com.fasterxml.jackson.databind.JsonNode checkout() throws Exception {

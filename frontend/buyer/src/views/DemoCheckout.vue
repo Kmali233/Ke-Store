@@ -26,7 +26,7 @@ const { data, loading, error, refresh } = useLoad(async signal => {
 void refresh()
 
 async function simulate(delivery: 'notify' | 'query') {
-  if (paying.value || !data.value?.payment.demoEnabled || data.value.payment.channel !== 'DEMO'
+  if (paying.value || !data.value?.payment.canStart || !data.value.payment.demoEnabled || data.value.payment.channel !== 'DEMO'
       || data.value.payment.state !== 'PENDING' || data.value.order.status !== 0) return
   paying.value = true
   actionError.value = ''
@@ -56,7 +56,7 @@ async function simulate(delivery: 'notify' | 'query') {
     <section v-if="data" class="panel padded stack">
       <template v-if="data.payment.demoEnabled && data.payment.channel === 'DEMO'">
         <div class="split"><h2>订单 {{ data.order.orderNo }}</h2><strong class="price large">{{ money(data.order.totalAmount) }}</strong></div>
-        <template v-if="data.payment.state === 'PENDING' && data.order.status === 0">
+        <template v-if="data.payment.canStart && data.payment.state === 'PENDING' && data.order.status === 0">
           <p class="muted">选「仅记录付款」可模拟通知丢失，返回订单详情后手动查询。</p>
           <div class="actions">
             <button :disabled="paying" @click="simulate('notify')">模拟付款并通知</button>
@@ -64,6 +64,8 @@ async function simulate(delivery: 'notify' | 'query') {
           </div>
         </template>
         <p v-else-if="data.payment.state === 'SUCCEEDED'" role="status">商城已确认演示付款。</p>
+        <p v-else-if="data.payment.closeProcessing" class="muted" role="status">订单关单处理中。</p>
+        <p v-else-if="data.payment.paymentExpired" class="muted" role="status">付款期限已过。</p>
         <p v-else class="muted">请从待付款订单详情发起演示支付。</p>
       </template>
       <p v-else class="muted">此订单的演示支付入口不可用。</p>

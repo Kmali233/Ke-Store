@@ -29,7 +29,7 @@ class OrderInputTest {
         assertThat(validator.validate(json.readValue("{"+ITEM+",\"addressId\":1}",OrderCreateDTO.class))).isEmpty();
     }
     @ParameterizedTest @ValueSource(strings={
-        "", "\"addressId\":null", "\"addressId\":1,\"receiverName\":null",
+        "\"addressId\":null", "\"addressId\":1,\"receiverName\":null",
         "\"receiverName\":null,\"receiverPhone\":\"1\",\"receiverAddress\":\"r\"",
         "\"receiverName\":\" \",\"receiverPhone\":\"1\",\"receiverAddress\":\"r\"",
         "\"receiverName\":\"x\",\"receiverPhone\":\"1\"", "\"addressId\":0"})

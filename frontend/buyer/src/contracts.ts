@@ -47,20 +47,6 @@ export interface Login {
   userInfo: UserSummary
 }
 
-export interface AddressInput {
-  receiverName: string
-  receiverPhone: string
-  province: string | null
-  city: string | null
-  district: string | null
-  detailAddress: string
-  isDefault: boolean
-}
-
-export interface Address extends AddressInput {
-  id: number
-}
-
 export type Availability = 'AVAILABLE' | 'OFF_SHELF' | 'OUT_OF_STOCK' | 'INVALID_SKU'
 
 export interface CartItem {
@@ -78,7 +64,7 @@ export interface CartItem {
 }
 
 export interface CheckoutInput {
-  addressId: number
+  addressId?: number // Legacy saved checkout payloads
   remark: string
   items: { skuId: number; quantity: number }[]
 }
@@ -94,13 +80,16 @@ export interface OrderSummary extends OrderCreated {
   createTime: string
 }
 
+export interface OrderRefund {
+  canRequest: boolean
+  refundNo: string | null
+  amount: number | null
+  status: 'REQUESTED' | 'PROCESSING' | 'REJECTED' | 'SUCCEEDED' | 'FAILED' | null
+  updatedAt: string | null
+}
+
 export interface OrderDetail extends OrderSummary {
-  receiverName: string
-  receiverPhone: string
-  receiverAddress: string
   remark: string | null
-  logisticsCompany: string | null
-  trackingNo: string | null
   items: {
     productId: number
     skuId: number | null
@@ -118,6 +107,9 @@ export interface PaymentStatus {
   sandboxEnabled: boolean
   demoEnabled: boolean
   canStart: boolean
-  state: 'NONE' | 'PENDING' | 'SUCCEEDED'
+  canSimulate: boolean
+  state: 'NONE' | 'PENDING' | 'SUCCEEDED' | 'CLOSED'
+  closeProcessing: boolean
+  paymentExpired: boolean
   channel: 'ALIPAY_SANDBOX' | 'DEMO' | null
 }

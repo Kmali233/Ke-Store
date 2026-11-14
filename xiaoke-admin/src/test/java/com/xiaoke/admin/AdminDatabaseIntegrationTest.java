@@ -190,9 +190,9 @@ class AdminDatabaseIntegrationTest {
         assertThat(request(get("/admin/access/me").header("Authorization",other),200).path("data").path("permissions").isEmpty()).isTrue();
         request(get("/admin/access/accounts").header("Authorization",other),403);
         assign(root,id,List.of(2L,3L),200);
-        assertThat(accounts.permissions(id)).containsExactlyInAnyOrder("product:write","inventory:adjust","order:ship");
+        assertThat(accounts.permissions(id)).containsExactlyInAnyOrder("product:write","inventory:adjust","order:read");
         assign(root,id,List.of(4L),200);
-        assertThat(accounts.permissions(id)).containsExactly("refund:review");
+        assertThat(accounts.permissions(id)).containsExactlyInAnyOrder("refund:review", "trade:reconcile");
         assign(other,id,List.of(1L),403);
         request(post("/admin/access/accounts").header("Authorization",other).contentType("application/json").content("{broken"),403);
         assign(root,id,List.of(1L),200);

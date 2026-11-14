@@ -57,7 +57,7 @@ function changeQuantity(line: CartItem) {
   <header class="page-title">
     <p class="eyebrow">购物袋</p>
     <h1>我的购物车</h1>
-    <p class="muted">勾选要购买的规格，再去确认收货地址。</p>
+    <p class="muted">勾选要购买的规格，再去确认结算信息。</p>
   </header>
   <p v-if="mutationError" class="error" role="alert">{{ mutationError }}</p>
   <p v-if="pending" class="notice"><RouterLink to="/checkout">查看上一次结算结果</RouterLink></p>
