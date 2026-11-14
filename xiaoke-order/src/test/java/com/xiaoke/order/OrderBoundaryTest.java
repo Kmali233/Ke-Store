@@ -19,16 +19,12 @@ class OrderBoundaryTest {
         bean.setPropertyValue(field,"a".repeat(limit+1));
         assertThat(factory.getValidator().validate(dto)).as(field+" beyond limit").isNotEmpty();
     }
-    @ParameterizedTest @CsvSource({"create,receiverName,50","create,receiverPhone,20","create,receiverAddress,255",
-        "create,remark,255","ship,logisticsCompany,50","ship,trackingNo,64"})
-    void shippingFieldLimits(String kind,String field,int limit) {
-        Object dto;
-        if(kind.equals("ship")) {var s=new OrderShipDTO();s.setLogisticsCompany("c");s.setTrackingNo("t");dto=s;}
-        else {
-            var c=new OrderCreateDTO();var i=new OrderItemCreateDTO();i.setProductId(1L);i.setQuantity(1);
-            c.setItems(java.util.List.of(i));c.setReceiverName("A");c.setReceiverPhone("1");c.setReceiverAddress("R");dto=c;
-        }
-        boundary(dto,field,limit);
+    @ParameterizedTest @CsvSource({"receiverName,50","receiverPhone,20","receiverAddress,255","remark,255"})
+    void legacyFieldsAndRemarkLimits(String field,int limit) {
+        var order=new OrderCreateDTO();var item=new OrderItemCreateDTO();item.setProductId(1L);item.setQuantity(1);
+        order.setItems(java.util.List.of(item));
+        order.setReceiverName("A");order.setReceiverPhone("1");order.setReceiverAddress("R");
+        boundary(order,field,limit);
     }
     @Test void productIdLongBoundaryIsStrict() throws Exception {
         var builder=org.springframework.http.converter.json.Jackson2ObjectMapperBuilder.json();

@@ -50,6 +50,8 @@ xiaoke:
     connect-timeout-ms: 1000
     read-timeout-ms: 2000
     preread-deadline-ms: 5000
+    payment-timeout-minutes: ${XIAOKE_ORDER_PAYMENT_TIMEOUT_MINUTES:30}
+    close-scan-delay-ms: ${XIAOKE_ORDER_CLOSE_SCAN_DELAY_MS:5000}
   web:
     allowed-origins: []
     max-request-body-bytes: 1048576

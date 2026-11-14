@@ -1,8 +1,8 @@
 package com.xiaoke.order.enums;
 import com.xiaoke.common.exception.BusinessException;
 public enum OrderStatus {
-    PENDING_PAYMENT(0,"待付款"), PAID(1,"已付款"), PREPARING(2,"备货中"),
-    SHIPPED(3,"已发货"), RECEIVED(4,"已签收"), CANCELED(5,"已取消");
+    PENDING_PAYMENT(0,"待付款"), PAID(1,"已付款"), PREPARING(2,"历史备货"),
+    SHIPPED(3,"历史发货"), RECEIVED(4,"历史签收"), CANCELED(5,"已取消");
     private final int code;
     private final String description;
 

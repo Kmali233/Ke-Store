@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { computed, onScopeDispose, ref, watch } from 'vue'
+import { computed, onScopeDispose, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ApiError, errorText, request } from '../api'
 import { availabilityLabel, cartTotal, loadCart } from '../cart'
 import { clearPending, readPending, reserveCheckout } from '../checkout'
 import type { PendingCheckout } from '../checkout'
 import LoadState from '../components/LoadState.vue'
-import type { Address, OrderCreated } from '../contracts'
+import type { OrderCreated } from '../contracts'
 import { money, snapshotSpecs } from '../display'
 import { useSession } from '../session'
 import { useLoad } from '../useLoad'
@@ -14,7 +14,6 @@ import { useLoad } from '../useLoad'
 const router = useRouter()
 const session = useSession()
 const userId = session.identity!.userInfo.id
-const addressId = ref<number>()
 const remark = ref('')
 const attempt = ref<PendingCheckout | null>(null)
 const busy = ref(false)
@@ -24,17 +23,9 @@ const storageError = ref('')
 let active = true
 onScopeDispose(() => { active = false })
 
-const { data, error, loading, refresh } = useLoad(async signal => {
-  const [cart, addresses] = await Promise.all([
-    loadCart(signal), request<Address[]>('/address/list', { auth: true, signal }),
-  ])
-  return { selected: cart.filter(item => item.selected), addresses }
-})
-watch(data, value => {
-  if (!value?.addresses.some(item => item.id === addressId.value)) {
-    addressId.value = (value?.addresses.find(item => item.isDefault) ?? value?.addresses[0])?.id
-  }
-})
+const { data, error, loading, refresh } = useLoad(async signal => ({
+  selected: (await loadCart(signal)).filter(item => item.selected),
+}))
 const eligible = computed(() => {
   const items = data.value?.selected ?? []
   return items.length > 0 && items.length <= 20 && items.every(item => item.availability === 'AVAILABLE')
@@ -103,12 +94,11 @@ async function send(pending: PendingCheckout) {
 }
 
 async function submit() {
-  if (busy.value || attempt.value || storageError.value || !eligible.value || !data.value || !addressId.value) return
+  if (busy.value || attempt.value || storageError.value || !eligible.value || !data.value) return
   busy.value = true
   actionError.value = ''
   try {
     const { attempt: pending, created } = await reserveCheckout(userId, {
-      addressId: addressId.value,
       remark: remark.value.trim(),
       items: data.value.selected.map(item => ({ skuId: item.skuId, quantity: item.quantity })),
     })
@@ -155,20 +145,6 @@ async function retry() {
     <form v-if="data?.selected.length" class="checkout-layout" @submit.prevent="submit">
       <div class="stack">
         <section class="panel padded stack">
-          <div class="split"><h2>收货地址</h2><RouterLink to="/addresses?from=checkout">管理地址</RouterLink></div>
-          <fieldset v-if="data.addresses.length" class="options" :disabled="busy">
-            <legend class="sr-only">选择收货地址</legend>
-            <label v-for="address in data.addresses" :key="address.id" class="choice">
-              <input v-model="addressId" type="radio" name="address" :value="address.id">
-              <span><strong>{{ address.receiverName }}</strong> {{ address.receiverPhone }}
-                <small v-if="address.isDefault" class="badge">默认</small><br>
-                {{ [address.province, address.city, address.district, address.detailAddress].filter(Boolean).join(' ') }}
-              </span>
-            </label>
-          </fieldset>
-          <p v-else class="notice">请先在地址簿中添加收货地址。</p>
-        </section>
-        <section class="panel padded stack">
           <h2>商品清单</h2>
           <div v-for="item in data.selected" :key="item.skuId" class="split order-line">
             <div><strong>{{ item.productName || '失效商品' }}</strong><p class="muted">{{ item.skuName }} {{ snapshotSpecs(item.skuSpec) }} × {{ item.quantity }}</p>
@@ -184,7 +160,7 @@ async function retry() {
         <strong class="price large">{{ money(cartTotal(data.selected)) }}</strong>
         <p class="muted">此处为参考合计，实际金额以订单为准。下单后可在订单详情查看付款方式。</p>
         <p v-if="!eligible" class="notice">请返回购物车调整库存不足、失效商品或超过 20 种的勾选项。</p>
-        <button type="submit" :disabled="busy || !addressId || !eligible || !!storageError">提交订单</button>
+        <button type="submit" :disabled="busy || !eligible || !!storageError">提交订单</button>
       </aside>
     </form>
     <div v-else-if="!storageError" class="state">

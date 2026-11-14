@@ -45,7 +45,8 @@ const permissions: Record<string, string> = {
   'admin:manage': '账号管理',
   'product:write': '商品管理',
   'inventory:adjust': '库存调整',
-  'order:ship': '订单发货',
+  'order:read': '订单查看',
+  'trade:reconcile': '支付退款对账',
   'audit:read': '审计查询',
   'refund:review': '退款审核（预留）',
 }

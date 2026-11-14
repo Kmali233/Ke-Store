@@ -85,12 +85,12 @@ CREATE TABLE `t_orders` (
   `order_no` varchar(32) NOT NULL COMMENT '业务订单号，对外暴露',
   `user_id` bigint NOT NULL COMMENT '下单用户ID',
   `total_amount` decimal(10,2) NOT NULL DEFAULT '0.00' COMMENT '订单总额',
-  `status` tinyint NOT NULL DEFAULT '0' COMMENT '状态：0待付款 1已付款 2备货中 3已发货 4已签收 5已取消',
+  `status` tinyint NOT NULL DEFAULT '0' COMMENT '0待付款 1已付款 2历史备货 3历史发货 4历史签收 5已取消',
   `logistics_company` varchar(50) DEFAULT NULL COMMENT '物流公司',
   `tracking_no` varchar(64) DEFAULT NULL COMMENT '运单号',
-  `receiver_name` varchar(50) NOT NULL COMMENT '收货人',
-  `receiver_phone` varchar(20) NOT NULL COMMENT '联系电话',
-  `receiver_address` varchar(255) NOT NULL COMMENT '收货地址（下单时快照）',
+  `receiver_name` varchar(50) DEFAULT NULL COMMENT '历史收货人',
+  `receiver_phone` varchar(20) DEFAULT NULL COMMENT '历史收货电话',
+  `receiver_address` varchar(255) DEFAULT NULL COMMENT '历史收货地址',
   `remark` varchar(255) DEFAULT NULL COMMENT '订单备注',
   `pay_time` datetime DEFAULT NULL COMMENT '支付时间',
   `ship_time` datetime DEFAULT NULL COMMENT '发货时间',
@@ -98,7 +98,14 @@ CREATE TABLE `t_orders` (
   `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   `deleted` tinyint NOT NULL DEFAULT '0' COMMENT '逻辑删除：0未删 1已删',
+  `payment_expires_at` datetime DEFAULT NULL COMMENT 'Payment deadline in UTC',
+  `close_reason` varchar(16) DEFAULT NULL COMMENT 'First close trigger',
+  `close_token` char(36) DEFAULT NULL COMMENT 'Current worker lease token',
+  `close_attempts` int unsigned NOT NULL DEFAULT '0',
+  `close_next_attempt_at` datetime DEFAULT NULL COMMENT 'UTC scan deadline or lease end',
+  `close_finished_at` datetime DEFAULT NULL COMMENT 'UTC close resolution time',
   KEY `idx_create_time` (`create_time`),
+  KEY `idx_orders_close_scan` (`status`,`deleted`,`close_next_attempt_at`,`id`),
   KEY `idx_status` (`status`),
   KEY `idx_user_id` (`user_id`),
   PRIMARY KEY (`id`),
@@ -300,7 +307,7 @@ CREATE TABLE `t_payment_order` (
   `pay_time` datetime DEFAULT NULL,
   CONSTRAINT `fk_payment_order` FOREIGN KEY (`order_id`) REFERENCES `t_orders` (`id`),
   CONSTRAINT `chk_payment_amount` CHECK ((`total_amount` > 0)),
-  CONSTRAINT `chk_payment_state` CHECK ((((`status` = _utf8mb4'PENDING') and (`trade_no` is null) and (`pay_time` is null)) or ((`status` = _utf8mb4'SUCCEEDED') and (`trade_no` is not null) and (`pay_time` is not null)))),
+  CONSTRAINT `chk_payment_state` CHECK ((((`status` in (_utf8mb4'PENDING',_utf8mb4'CLOSED')) and (`trade_no` is null) and (`pay_time` is null)) or ((`status` = _utf8mb4'SUCCEEDED') and (`trade_no` is not null) and (`pay_time` is not null)))),
   PRIMARY KEY (`order_id`),
   UNIQUE KEY `uk_payment_no` (`payment_no`),
   UNIQUE KEY `uk_payment_trade` (`channel`,`trade_no`)
@@ -312,6 +319,46 @@ CREATE TABLE `t_demo_payment_trade` (
   CONSTRAINT `fk_demo_trade_payment` FOREIGN KEY (`payment_no`) REFERENCES `t_payment_order` (`payment_no`),
   PRIMARY KEY (`payment_no`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='演示收银台的已付款回执';
+
+CREATE TABLE `t_order_tracking_event` (
+  `order_id` bigint NOT NULL,
+  `step` tinyint NOT NULL,
+  `occurred_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT `ck_order_tracking_step` CHECK ((`step` between 1 and 3)),
+  PRIMARY KEY (`order_id`,`step`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE `t_order_refund` (
+  `order_id` bigint NOT NULL,
+  `refund_no` char(32) NOT NULL,
+  `amount` decimal(10,2) NOT NULL,
+  `status` varchar(16) NOT NULL,
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT `ck_order_refund_amount` CHECK ((`amount` > 0)),
+  CONSTRAINT `ck_order_refund_status` CHECK ((`status` in (_utf8mb4'REQUESTED',_utf8mb4'PROCESSING',_utf8mb4'REJECTED',_utf8mb4'SUCCEEDED',_utf8mb4'FAILED'))),
+  KEY `idx_refund_status` (`status`,`order_id`),
+  PRIMARY KEY (`order_id`),
+  UNIQUE KEY `refund_no` (`refund_no`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE `t_demo_refund_trade` (
+  `payment_no` varchar(32) NOT NULL,
+  `refund_no` char(32) NOT NULL,
+  `amount` decimal(10,2) NOT NULL,
+  PRIMARY KEY (`payment_no`),
+  UNIQUE KEY `refund_no` (`refund_no`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE `t_trade_reconciliation` (
+  `order_id` bigint NOT NULL,
+  `kind` varchar(8) NOT NULL,
+  `outcome` varchar(24) NOT NULL,
+  `attempts` int NOT NULL,
+  `checked_at` datetime(6) NOT NULL,
+  KEY `idx_reconciliation_checked` (`checked_at`,`order_id`,`kind`),
+  PRIMARY KEY (`order_id`,`kind`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 INSERT INTO t_admin_role(id,code,name) VALUES
  (1,'system_admin','系统管理员'),(2,'product_admin','商品管理员'),
@@ -326,3 +373,14 @@ INSERT INTO t_admin_role_permission(role_id,permission_code) VALUES
 
 INSERT INTO t_admin_permission(code,name) VALUES('audit:read','管理审计查询');
 INSERT INTO t_admin_role_permission(role_id,permission_code) VALUES(1,'audit:read');
+
+INSERT INTO t_admin_permission(code,name) VALUES ('trade:reconcile','支付退款对账');
+INSERT INTO t_admin_role_permission(role_id,permission_code) VALUES (1,'trade:reconcile'), (4,'trade:reconcile');
+
+START TRANSACTION;
+INSERT INTO t_admin_permission(code,name) VALUES ('order:read','订单查看');
+INSERT INTO t_admin_role_permission(role_id,permission_code)
+    SELECT role_id,'order:read' FROM t_admin_role_permission WHERE permission_code='order:ship';
+DELETE FROM t_admin_role_permission WHERE permission_code='order:ship';
+DELETE FROM t_admin_permission WHERE code='order:ship';
+COMMIT;

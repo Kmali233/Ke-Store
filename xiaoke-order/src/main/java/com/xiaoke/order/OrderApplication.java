@@ -6,8 +6,10 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 @org.springframework.context.annotation.Import(com.xiaoke.audit.AuditConfiguration.class)
 @SpringBootApplication(scanBasePackages = {"com.xiaoke.order", "com.xiaoke.common"})
+@org.springframework.scheduling.annotation.EnableScheduling
 @MapperScan({"com.xiaoke.order.mapper", "com.xiaoke.order.adapter.user", "com.xiaoke.order.adapter.address",
-        "com.xiaoke.order.adapter.category", "com.xiaoke.order.adapter.product", "com.xiaoke.order.idempotency"})
+        "com.xiaoke.order.adapter.category", "com.xiaoke.order.adapter.product", "com.xiaoke.order.idempotency",
+        "com.xiaoke.order.refund", "com.xiaoke.order.reconciliation"})
 public class OrderApplication {
     public static void main(String[] args) {
         SpringApplication.run(OrderApplication.class, args);

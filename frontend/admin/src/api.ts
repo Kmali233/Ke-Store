@@ -10,6 +10,7 @@ interface Options {
   method?: 'GET' | 'POST' | 'PUT' | 'DELETE'
   body?: unknown
   signal?: AbortSignal
+  timeoutMs?: number
 }
 
 export class ApiError extends Error {
@@ -27,7 +28,7 @@ export async function request<T>(path: string, options: Options = {}): Promise<T
   const headers = new Headers({ Accept: 'application/json' })
   if (token) headers.set('Authorization', token)
   if (options.body !== undefined) headers.set('Content-Type', 'application/json')
-  const timeout = AbortSignal.timeout(12_000)
+  const timeout = AbortSignal.timeout(options.timeoutMs ?? 12_000)
   const signal = options.signal ? AbortSignal.any([options.signal, timeout]) : timeout
   let response: Response
   let envelope: Result<T> | undefined

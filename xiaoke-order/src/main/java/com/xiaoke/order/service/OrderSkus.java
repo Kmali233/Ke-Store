@@ -1,5 +1,6 @@
 package com.xiaoke.order.service;
 import com.xiaoke.common.exception.BusinessException;
+import com.xiaoke.common.inventory.InventoryLedger.Event;
 import com.xiaoke.order.adapter.product.*;
 import com.xiaoke.order.dto.OrderItemCreateDTO;
 import com.xiaoke.order.entity.OrderItem;
@@ -48,9 +49,9 @@ public class OrderSkus {
             throw new BusinessException(409,"SKU库存冲突");
         inventory.changed(id,com.xiaoke.common.inventory.InventoryLedger.Event.ORDER_OCCUPY,orderNo,-q,q);
     }
-    public void restore(Long id,int q,String orderNo) {
+    public void restore(Long id,int q,String orderNo,Event event) {
         if(mapper.restore(id,q)!=1)
             throw new BusinessException(409,"SKU恢复冲突");
-        inventory.changed(id,com.xiaoke.common.inventory.InventoryLedger.Event.CANCEL_RESTORE,orderNo,q,-q);
+        inventory.changed(id,event,orderNo,q,-q);
     }
 }

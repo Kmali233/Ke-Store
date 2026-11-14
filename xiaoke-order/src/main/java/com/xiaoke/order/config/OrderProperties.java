@@ -16,6 +16,9 @@ public class OrderProperties {
     @NotNull @Pattern(regexp="Asia/Shanghai")
     private String zoneId="Asia/Shanghai";
 
+    @Min(1) @Max(1440)
+    private int paymentTimeoutMinutes=30;
+
     @Min(1) @Max(1000)
     private int connectTimeoutMs=1000;
 

@@ -23,7 +23,7 @@ class OrderCommandFacadeTest {
     OrderTransactions transactions=mock(OrderTransactions.class);
     Clock clock=Clock.fixed(Instant.parse("2026-12-31T15:59:59Z"),ZoneOffset.UTC);
     OrderIdempotency idempotency=mock(OrderIdempotency.class);
-    OrderCommandFacade facade=new OrderCommandFacade(input,users,http,writes,transactions,clock,new OrderProperties(),idempotency);
+    OrderCommandFacade facade=new OrderCommandFacade(input,users,http,writes,transactions,clock,new OrderProperties(),idempotency,mock(OrderCloseService.class));
     OrderCreateDTO dto=new OrderCreateDTO();
     { dto.setItems(java.util.List.of()); }
     DuplicateKeyException collision(String key) {
@@ -61,7 +61,7 @@ class OrderCommandFacadeTest {
             public Clock withZone(ZoneId ignored){return this;}
             public Instant instant(){return now.get();}
         };
-        var local=new OrderCommandFacade(input,users,http,writes,transactions,mutable,new OrderProperties(),idempotency);
+        var local=new OrderCommandFacade(input,users,http,writes,transactions,mutable,new OrderProperties(),idempotency,mock(OrderCloseService.class));
         doAnswer(invocation->{now.set(Instant.parse("2026-12-31T16:00:01Z"));return null;}).when(http).preread(anyList());
         var result=new OrderCreateVO("20261231000001",0,java.math.BigDecimal.ONE);
         when(writes.createOnce(eq(1L),same(dto),eq(LocalDate.of(2026,12,31))))

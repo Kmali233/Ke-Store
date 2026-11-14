@@ -192,3 +192,14 @@ INSERT INTO t_admin_role_permission(role_id,permission_code) VALUES
 
 INSERT INTO t_admin_permission(code,name) VALUES('audit:read','管理审计查询');
 INSERT INTO t_admin_role_permission(role_id,permission_code) VALUES(1,'audit:read');
+
+INSERT INTO t_admin_permission(code,name) VALUES ('trade:reconcile','支付退款对账');
+INSERT INTO t_admin_role_permission(role_id,permission_code) VALUES (1,'trade:reconcile'), (4,'trade:reconcile');
+
+START TRANSACTION;
+INSERT INTO t_admin_permission(code,name) VALUES ('order:read','订单查看');
+INSERT INTO t_admin_role_permission(role_id,permission_code)
+    SELECT role_id,'order:read' FROM t_admin_role_permission WHERE permission_code='order:ship';
+DELETE FROM t_admin_role_permission WHERE permission_code='order:ship';
+DELETE FROM t_admin_permission WHERE code='order:ship';
+COMMIT;

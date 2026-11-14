@@ -283,9 +283,7 @@ class Verification:
 
     def order(self, pid, buyer=0, quantity=1, address=None):
         body = {'items': [{'productId': pid, 'quantity': quantity}]}
-        if address is None:
-            body.update(receiverName='Verifier', receiverPhone='000', receiverAddress='Isolated road')
-        else:
+        if address is not None:
             body['addressId'] = address
         return body
 
@@ -309,12 +307,13 @@ class Verification:
         assert self.data_call('order_a', 'GET', '/order/' + no + '/status', token=token)['status'] == 0
         self.call('order_b', 'GET', '/order/' + no, token=self.tokens[1], expected=404)
         self.data_call('order_a', 'POST', '/order/' + no + '/pay', token=token)
-        self.call('order_b', 'POST', '/order/' + no + '/ship',
-                  {'logisticsCompany': 'Verifier', 'trackingNo': 'SMOKE'}, expected=401)
-        self.data_call('order_b', 'POST', '/order/' + no + '/ship',
-                       {'logisticsCompany': 'Verifier', 'trackingNo': 'SMOKE'}, admin=True)
-        self.call('order_a', 'POST', '/order/' + no + '/cancel', token=token, expected=409)
-        self.record('seven_order_endpoints_and_owner', stock=list(self.counters(pid)))
+        self.call('order_b', 'POST', '/order/' + no + '/ship', admin=True, expected=404)
+        self.call('order_b', 'GET', '/order/' + no + '/tracking', token=token, expected=404)
+        self.call('order_b', 'POST', '/order/' + no + '/receive', token=token, expected=404)
+        admin_detail = self.data_call('order_b', 'GET', '/admin/orders/' + no, admin=True)
+        assert admin_detail['status'] == 1 and 'receiverAddress' not in admin_detail
+        assert self.sql("SELECT receiver_address IS NULL FROM t_orders WHERE order_no='" + no + "'") == [['1']]
+        self.record('digital_order_endpoints_and_owner', stock=list(self.counters(pid)))
 
     def shopping_cart(self):
         token, other = self.tokens[:2]
@@ -332,13 +331,9 @@ class Verification:
         self.data_call('order_a', 'PATCH', path, {'quantity': 3}, token)
         self.data_call('order_a', 'POST', '/cart/items', {'skuId': kept, 'quantity': 1}, token)
         self.data_call('order_b', 'PATCH', '/cart/items/' + str(kept), {'selected': False}, token)
-        address = self.data_call('user', 'POST', '/address', {
-            'receiverName': 'Verifier', 'receiverPhone': '111', 'detailAddress': 'Cart Road',
-            'isDefault': False,
-        }, token)
         key = 'cart-' + uuid.uuid4().hex
         headers = {'Idempotency-Key': key}
-        body = {'addressId': address['id'], 'items': [{'skuId': sid, 'quantity': 3}]}
+        body = {'items': [{'skuId': sid, 'quantity': 3}]}
         assert self.counters(pid) == (5, 0)
         self.call('order_a', 'POST', '/cart/checkout',
                   {**body, 'items': [item]}, token, headers=headers, expected=409)
@@ -472,23 +467,6 @@ class Verification:
                     client_saw_response=False, first_request_committed=True, automatic_retries=0,
                     same_key_returns_original=bool(idempotency_key), explicit_new_request_creates_new_order=not bool(idempotency_key))
 
-    def shipping_cancel(self):
-        pid = self.product(self.rounds * 2)
-        shipped = 0
-        for i in range(self.rounds):
-            no = self.data_call('order_a', 'POST', '/order', self.order(pid, quantity=2), self.tokens[0])['orderNo']
-            self.data_call('order_a', 'POST', f'/order/{no}/pay', token=self.tokens[0])
-            jobs = [lambda: self.call('order_a', 'POST', f'/order/{no}/ship',
-                     {'logisticsCompany': 'Verifier', 'trackingNo': 'RACE' + str(i)}, admin=True, expected=(200, 409)),
-                    lambda: self.call('order_b', 'POST', f'/order/{no}/cancel', token=self.tokens[0], expected=(200, 409))]
-            outcomes = self.race(jobs if i % 2 else list(reversed(jobs)))
-            assert sorted(r[0] for r in outcomes) == [200, 409]
-            status = self.data_call('order_a', 'GET', f'/order/{no}/status', token=self.tokens[0])['status']
-            assert status in (3, 5)
-            shipped += status == 3
-        assert self.counters(pid) == (self.rounds * 2 - shipped * 2, shipped * 2)
-        self.record('shipping_vs_cancel', rounds=self.rounds, shipped=shipped, canceled=self.rounds-shipped)
-
     def product_updates(self):
         pid = self.product(self.workers + 5)
         initial = self.workers + 5
@@ -555,27 +533,6 @@ class Verification:
             assert self.sql('SELECT COUNT(*) FROM t_product_attr WHERE deleted=0 AND product_id=' + str(target))[0][0] == '0'
         self.record('atomic_attribute_replacement_snapshot_and_delete', overwrite_writers=self.rounds,
                     snapshot_reads=self.rounds*2, delete_races=self.rounds)
-
-    def address_order(self):
-        pid = self.product(self.rounds * 2)
-        token = self.tokens[0]
-        for i in range(self.rounds):
-            old = {'receiverName': 'Old', 'receiverPhone': '111', 'detailAddress': 'Old Road', 'isDefault': False}
-            address = self.data_call('user', 'POST', '/address', old, token)
-            new = {'id': address['id'], 'receiverName': 'New', 'receiverPhone': '222', 'detailAddress': 'New Road', 'isDefault': False}
-            outcomes = self.race([
-                lambda: self.call('order_a', 'POST', '/order', self.order(pid, address=address['id']), token, expected=200),
-                lambda: self.call('user', 'PUT', '/address', new, token, expected=200)])
-            detail = self.data_call('order_b', 'GET', '/order/' + outcomes[0][1]['orderNo'], token=token)
-            snapshot = (detail['receiverName'], detail['receiverPhone'], detail['receiverAddress'])
-            assert snapshot in (('Old', '111', 'Old Road'), ('New', '222', 'New Road')), snapshot
-            outcomes = self.race([
-                lambda: self.call('order_b', 'POST', '/order', self.order(pid, address=address['id']), token, expected=(200, 404)),
-                lambda: self.call('user', 'DELETE', '/address/' + str(address['id']), token=token, expected=200)])
-            if outcomes[0][0] == 200:
-                detail = self.data_call('order_a', 'GET', '/order/' + outcomes[0][1]['orderNo'], token=token)
-                assert detail['receiverAddress'] == 'New Road'
-        self.record('address_update_delete_vs_order_snapshot', update_races=self.rounds, delete_races=self.rounds)
 
     def inventory_ledger(self):
         queries = {
@@ -668,8 +625,8 @@ class Verification:
             self.actors()
             scenarios = (self.smoke,) if faults_only else (self.smoke, self.registration_and_defaults, self.last_stock,
                              self.distinct_product_orders, self.pay_cancel,
-                             self.shipping_cancel, self.product_updates, self.categories, self.attributes,
-                             self.address_order, self.lost_committed_response, self.shopping_cart, self.inventory_ledger)
+                             self.product_updates, self.categories, self.attributes,
+                             self.lost_committed_response, self.shopping_cart, self.inventory_ledger)
             for scenario in scenarios:
                 scenario()
             self.real_service_failures()

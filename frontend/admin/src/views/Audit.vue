@@ -33,7 +33,8 @@ const actions: Record<string, string> = {
   SKU_CREATE: '新建 SKU', SKU_UPDATE: '修改 SKU', SKU_DELETE: '删除 SKU',
   SKU_PRICE_CHANGE: '修改 SKU 价格', SKU_STATUS_CHANGE: '修改 SKU 状态',
   ADMIN_CREATE: '新建账号', ADMIN_ROLES_CHANGE: '分配角色', ADMIN_STATUS_CHANGE: '修改账号状态',
-  ADMIN_CREDENTIAL_RECOVER: '恢复管理凭证', ORDER_SHIP: '订单发货',
+  ADMIN_CREDENTIAL_RECOVER: '恢复管理凭证', ORDER_SHIP: '订单发货', TRACKING_ADVANCE: '推进模拟物流',
+  REFUND_RETRY: '重试原退款请求', PAYMENT_RECONCILE: '支付对账', REFUND_RECONCILE: '退款对账',
   INVENTORY_ADJUST: '库存调整', REFUND_REVIEW: '退款审核',
 }
 const targets: Record<string, string> = {

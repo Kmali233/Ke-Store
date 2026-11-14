@@ -1,13 +1,12 @@
 package com.xiaoke.order.controller;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.xiaoke.common.auth.*;
-import com.xiaoke.common.auth.admin.AdminPermission;
-import com.xiaoke.common.auth.admin.AdminPermissions;
 import com.xiaoke.common.exception.BusinessException;
 import com.xiaoke.common.result.Result;
 import com.xiaoke.common.web.AllowedQuery;
 import com.xiaoke.order.dto.*;
 import com.xiaoke.order.service.*;
+import com.xiaoke.order.refund.RefundService;
 import com.xiaoke.order.vo.*;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -20,6 +19,18 @@ import org.springframework.web.bind.annotation.*;
 public class OrderController {
     private final OrderCommandService commands;
     private final OrderQueryService queries;
+    private final RefundService refunds;
+
+    @GetMapping("/{orderNo}/refund") @LoginRequired @AllowedQuery({})
+    public Result<RefundService.Status> refund(@PathVariable String orderNo) {
+        return Result.success(refunds.status(UserContext.requireUserId(), orderNo));
+    }
+
+    @PostMapping("/{orderNo}/refund") @LoginRequired @AllowedQuery({})
+    public Result<RefundService.Status> requestRefund(@PathVariable String orderNo, HttpServletRequest request) {
+        requireEmptyBody(request);
+        return Result.success(refunds.request(UserContext.requireUserId(), orderNo));
+    }
 
     // 创建订单
     @PostMapping
@@ -27,7 +38,7 @@ public class OrderController {
     public Result<OrderCreateVO> create(@Valid @RequestBody OrderCreateDTO dto,HttpServletRequest request) {
         /** 从请求头中读取Idempotency-Key
          * uid：谁买
-         * dto：买什么、买多少、寄哪里
+         * dto：买什么、买多少
          * key：这一次购买的标记
          * Controller 负责把这些信息交给 Service。
          */
@@ -67,13 +78,6 @@ public class OrderController {
     public Result<Void> pay(@PathVariable String orderNo,HttpServletRequest request) {
         requireEmptyBody(request);
         commands.pay(UserContext.requireUserId(),orderNo);
-        return Result.success();
-    }
-
-    // 订单发货
-    @PostMapping("/{orderNo}/ship") @AdminPermission(AdminPermissions.ORDER_SHIP)
-    public Result<Void> ship(@PathVariable String orderNo,@Valid @RequestBody OrderShipDTO dto) {
-        commands.ship(orderNo,dto);
         return Result.success();
     }
 

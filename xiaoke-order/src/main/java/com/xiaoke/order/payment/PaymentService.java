@@ -14,6 +14,7 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.util.Map;
+import java.time.LocalDateTime;
 import java.util.UUID;
 
 import static com.xiaoke.order.payment.PaymentOrder.State.PENDING;
@@ -24,10 +25,14 @@ import static com.xiaoke.order.service.OrderInput.rows;
 @Service
 @RequiredArgsConstructor
 public class PaymentService {
-    public record Status(boolean sandboxEnabled, boolean demoEnabled, boolean canStart, String state, String channel) {}
+    public record Status(boolean sandboxEnabled, boolean demoEnabled, boolean canStart, String state, String channel,
+                         boolean closeProcessing, boolean paymentExpired, boolean canSimulate) {}
     public record Checkout(String paymentUrl) {}
+    private record CheckoutRequest(PaymentOrder payment, LocalDateTime expiresAtUtc) {}
+    public enum CloseResult { PAID, CLOSED, UNKNOWN }
 
     private final ObjectProvider<PaymentGateway> gatewayProvider;
+    private final ObjectProvider<MockPaymentAdapter> mockPayment;
     private final OrdersMapper orders;
     private final PaymentOrderMapper payments;
     private final OrderUsers users;
@@ -43,10 +48,10 @@ public class PaymentService {
             default -> throw new BusinessException(400, "支付通道不合法");
         };
         var gateway = requireGateway(expectedChannel);
-        var payment = transactions.write(() -> {
+        var checkout = transactions.write(() -> {
             users.lock(userId);
             var order = requireOrder(orders.lockOwned(userId, orderNo));
-            if (!isPending(order) || order.getTotalAmount().signum() <= 0) {
+            if (!isPending(order) || !order.acceptsPayment(orders.utcNow()) || order.getTotalAmount().signum() <= 0) {
                 throw new BusinessException(409, "当前订单不可发起支付");
             }
             var previous = payments.findByOrderId(order.getId());
@@ -55,16 +60,16 @@ public class PaymentService {
                 if (previous.status() != PENDING) {
                     throw new BusinessException(409, "支付单已经确认");
                 }
-                return previous;
+                return new CheckoutRequest(previous, order.getPaymentExpiresAt());
             }
             var account = gateway.account();
             var created = new PaymentOrder(order.getId(), UUID.randomUUID().toString().replace("-", ""),
                     account.channel(), account.appId(), account.sellerId(), order.getTotalAmount(), PENDING, null);
             rows(payments.insert(created), 1);
-            return created;
+            return new CheckoutRequest(created, order.getPaymentExpiresAt());
         });
         // The payment number must be committed before the buyer can reach the gateway.
-        return new Checkout(gateway.checkout(payment, orderNo));
+        return new Checkout(gateway.checkout(checkout.payment(), orderNo, checkout.expiresAtUtc()));
     }
 
     public Status status(Long userId, String orderNo) {
@@ -74,12 +79,17 @@ public class PaymentService {
             var order = requireOrder(orders.selectOwned(userId, orderNo));
             var payment = payments.findByOrderId(order.getId());
             var gateway = gatewayProvider.getIfAvailable();
-            boolean canStart = gateway != null && isPending(order) && order.getTotalAmount().signum() > 0
+            var now = orders.utcNow();
+            var mock = mockPayment.getIfAvailable();
+            boolean pendingAndPayable = isPending(order) && order.acceptsPayment(now);
+            boolean canSimulate = mock != null && mock.isLocalSimulation() && pendingAndPayable && payment == null;
+            boolean canStart = gateway != null && pendingAndPayable && order.getTotalAmount().signum() > 0
                     && (payment == null || (payment.status() == PENDING && payment.matches(gateway.account())));
             String enabled = gateway == null ? null : gateway.account().channel();
             return new Status(AlipaySandboxGateway.CHANNEL.equals(enabled), DemoPaymentGateway.CHANNEL.equals(enabled),
                     canStart, payment == null ? "NONE" : payment.status().name(),
-                    payment == null ? enabled : payment.channel());
+                    payment == null ? enabled : payment.channel(),
+                    isPending(order) && order.getCloseReason() != null, isPending(order) && order.paymentExpired(now), canSimulate);
         });
     }
 
@@ -119,7 +129,8 @@ public class PaymentService {
                 throw new BusinessException(409, "请先发起演示支付");
             }
             requireAccount(existing, demo.account());
-            if (existing.status() == PENDING && !isPending(order)) {
+            if (existing.status() != SUCCEEDED && (existing.status() != PENDING || !isPending(order)
+                    || !order.acceptsPayment(orders.utcNow()))) {
                 throw new BusinessException(409, "当前订单不可付款");
             }
             demo.recordPaid(existing);
@@ -130,7 +141,30 @@ public class PaymentService {
         }
     }
 
-    private void confirm(PaymentGateway.Trade trade) {
+    public CloseResult coordinateClose(PaymentOrder payment) {
+        transactions.outsideTransaction();
+        var gateway = requireGateway(payment.channel());
+        requireAccount(payment, gateway.account());
+        var trade = gateway.query(payment).orElse(null);
+        if (trade != null) {
+            if (!payment.paymentNo().equals(trade.paymentNo()) || !payment.matches(trade.account())) {
+                throw invalidTrade();
+            }
+            if (trade.state().paid()) {
+                confirm(trade);
+                return CloseResult.PAID;
+            }
+            if (trade.state() == PaymentGateway.TradeState.TRADE_CLOSED) {
+                return CloseResult.CLOSED;
+            }
+        } else if (!DemoPaymentGateway.CHANNEL.equals(payment.channel())) {
+            // A previously issued page-pay URL might still create the missing trade.
+            return CloseResult.UNKNOWN;
+        }
+        return gateway.closeUnpaid(payment) ? CloseResult.CLOSED : CloseResult.UNKNOWN;
+    }
+
+    public void confirm(PaymentGateway.Trade trade) {
         if (trade.paymentNo() == null || !trade.paymentNo().matches("[a-f0-9]{32}")
                 || trade.totalAmount() == null || !trade.totalAmount().matches("[0-9]{1,9}(\\.[0-9]{1,2})?")
                 || (trade.state().paid() && (trade.tradeNo() == null || !trade.tradeNo().matches("[0-9]{1,64}")))) {
@@ -162,8 +196,17 @@ public class PaymentService {
             }
             rows(orders.casPay(order.getId(), order.getUserId()), 1);
             rows(payments.succeed(orderId, trade.tradeNo()), 1);
+            if (order.getCloseReason() != null) {
+                rows(orders.finishClose(orderId), 1);
+            }
             return null;
         });
+    }
+
+    public PaymentGateway gatewayFor(PaymentOrder payment) {
+        var gateway = requireGateway(payment.channel());
+        requireAccount(payment, gateway.account());
+        return gateway;
     }
 
     private PaymentGateway requireGateway(String channel) {

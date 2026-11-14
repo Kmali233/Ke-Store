@@ -4,13 +4,13 @@ import jakarta.validation.*;
 import java.util.HashSet;
 
 /**
- * 执行两项检查：收货来源是否合法、商品 ID 是否重复
+ * 执行两项检查：历史请求格式是否合法、商品 ID 是否重复
  */
 public class OrderCreateValidator
         implements ConstraintValidator<ValidOrderCreate,OrderCreateDTO> {
     public boolean isValid(OrderCreateDTO value, ConstraintValidatorContext context) {
         if (value==null) { return true; }
-        if (!value.validShippingSource()) { return false; }
+        if (!value.validLegacyShipping()) { return false; }
         if (value.getItems()==null) { return true; }
         var ids=new HashSet<String>();
         for (var item:value.getItems()) {

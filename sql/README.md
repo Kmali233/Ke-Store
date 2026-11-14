@@ -1,5 +1,9 @@
 # 数据库增量迁移（阶段01）
 
+## V15 虚拟商品结算
+
+`V15__digital_order_checkout.sql` 将旧订单的三列收货信息改为可空，将原发货角色授权迁为 `order:read`。历史订单、原发货审计与模拟轨迹表继续留存。部署时先停止旧写服务并备份，迁移成功后同步更新 order、admin 和前端。阶段 13A 当前验收用 `python scripts/sync-test-schemas.py --check` 与 `python scripts/verify-system.py --workers 4 --rounds 1`。下文引用发货接口的旧阶段验收应在对应历史版本运行。
+
 ## 阶段06：V6管理操作审计（2026-10-29）
 
 新增 `V6__management_audit.sql`：追加 `t_admin_audit` 成功审计表，并将 `audit:read` 仅授予系统管理员角色。V1—V5保持原文。当前共16张业务/辅助表，不含Flyway历史表；历史章节中的表数只代表当时版本。

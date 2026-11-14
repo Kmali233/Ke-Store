@@ -27,12 +27,15 @@ public class OrderIdempotency {
 
      /** 计算请求摘要,返回幂等键、版本号、内容摘要 */
     public Request request(String key,OrderCreateDTO dto) {
-        return request(key,dto,dto.getItems().stream().anyMatch(item->item.getSkuId()!=null)?2:1);
+        int version = dto.hasLegacyShipping()
+                ? (dto.getItems().stream().anyMatch(item -> item.getSkuId() != null) ? 2 : 1)
+                : 4;
+        return request(key, dto, version);
     }
 
     public Request cartRequest(String key,OrderCreateDTO dto) {
         // Share the key namespace with direct orders, but reject replay across the two operations.
-        return request(key,dto,3);
+        return request(key, dto, dto.hasLegacyShipping() ? 3 : 5);
     }
 
     private Request request(String key,OrderCreateDTO dto,int version) {
@@ -48,16 +51,22 @@ public class OrderIdempotency {
                     .thenComparing(i->i.getSkuId()==null?i.getProductId():i.getSkuId()))
                     .map(i->List.of(i.getSkuId()==null?"product":"sku",i.getSkuId()==null?i.getProductId():i.getSkuId(),i.getQuantity())).toList();
         }
-        Object shipping=dto.getAddressId()!=null ? List.of("address",dto.getAddressId())
-                : List.of("manual",dto.getReceiverName(),dto.getReceiverPhone(),dto.getReceiverAddress());
+        List<?> canonicalFields = version <= 3
+                ? Arrays.asList(version, products, legacyShipping(dto), dto.getRemark())
+                : Arrays.asList(version, products, dto.getRemark());
         try {
-            byte[] canonical=json.writeValueAsBytes(Arrays.asList(version,products,shipping,dto.getRemark()));
+            byte[] canonical=json.writeValueAsBytes(canonicalFields);
             return new Request(key,version,HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(canonical)));
         } catch (JsonProcessingException | NoSuchAlgorithmException impossible) {
             throw new IllegalStateException("Cannot hash order request",impossible);
         }
     }
 
+
+    private List<?> legacyShipping(OrderCreateDTO dto) {
+        return dto.getAddressId() != null ? List.of("address", dto.getAddressId())
+                : List.of("manual", dto.getReceiverName(), dto.getReceiverPhone(), dto.getReceiverAddress());
+    }
 
     /** 校验请求摘要 */
     public OrderCreateVO replay(Long uid,Request request,boolean locked) {

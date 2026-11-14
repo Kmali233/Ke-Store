@@ -5,7 +5,7 @@ import jakarta.validation.constraints.*;
 import lombok.*;
 import java.util.List;
 
-/** 收货字段记录是否出现在JSON中，区分省略和显式null。 */
+/** 历史收货字段只用于兼容原请求的幂等摘要。 */
 @Getter @Setter
 @ValidOrderCreate
 public class OrderCreateDTO {
@@ -24,7 +24,12 @@ public class OrderCreateDTO {
     public void setReceiverPhone(String value) { phoneProvided=true; receiverPhone=trim(value); }
     public void setReceiverAddress(String value) { locationProvided=true; receiverAddress=trim(value); }
     public void setRemark(String value) { remark=value==null || value.trim().isEmpty() ? null : value.trim(); }
-    public boolean validShippingSource() {
+    public boolean hasLegacyShipping() {
+        return addressProvided || nameProvided || phoneProvided || locationProvided;
+    }
+
+    public boolean validLegacyShipping() {
+        if (!hasLegacyShipping()) { return true; }
         if (addressProvided) { return addressId!=null && !nameProvided && !phoneProvided && !locationProvided; }
         return nameProvided && phoneProvided && locationProvided && receiverName!=null && receiverPhone!=null && receiverAddress!=null;
     }

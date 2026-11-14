@@ -129,7 +129,7 @@ class OrderDatabaseIntegrationTest {
     }
     @AfterAll void close() { HTTP.stop(0); HTTP_POOL.shutdownNow(); }
 
-    @Test void sevenEndpointsPreserveSnapshotsAndInventory() throws Exception {
+    @Test void orderEndpointsPreserveSnapshotsAndInventory() throws Exception {
         long p=product("phone",10,"3.25",null);
         String no=createApi(p,2);
         assertCounts(p,8,2);
@@ -139,13 +139,12 @@ class OrderDatabaseIntegrationTest {
         assertThat(detail.get("items").get(0).size()).isEqualTo(9);
         assertThat(api("GET","/order/page",null,tokenA,200).get("total").asInt()).isEqualTo(1);
         var status=api("GET","/order/"+no+"/status",null,tokenA,200);
-        assertThat(status.size()).isEqualTo(6); assertThat(status.get("items").get(0).size()).isEqualTo(2);
+        assertThat(status.size()).isEqualTo(4); assertThat(status.get("items").get(0).size()).isEqualTo(2);
         assertThat(status.has("receiverAddress")).isFalse();
         api("POST","/order/"+no+"/pay",null,tokenA,200);
         assertCounts(p,8,2);
         assertThat(queries.detail(a,no).payTime()).isNotNull();
-        api("POST","/order/"+no+"/ship","{\"logisticsCompany\":\" test \",\"trackingNo\":\" T1 \"}",null,200);
-        assertThat(queries.status(a,no).status()).isEqualTo(3);
+        assertThat(queries.status(a,no).status()).isEqualTo(1);
         assertCounts(p,8,2);
         String canceled=createApi(p,1);
         api("POST","/order/"+canceled+"/cancel",null,tokenA,200);
@@ -171,18 +170,6 @@ class OrderDatabaseIntegrationTest {
         assertThat(HTTP_CALLS).hasValue(0);
     }
 
-    @Test void shippingRequiresAdministratorPermissionBeforeBody() throws Exception {
-        for(int mode=0;mode<5;mode++) {
-            environment.setActiveProfiles(mode==1?new String[]{"prod"}:mode==2?new String[]{"dev","prod"}:new String[]{"dev"});
-            admin.setLocalAdminEnabled(mode!=0); admin.setLocalAdminKey(mode==3?"":"order-test-admin");
-            var req=post("/order/20261024000001/ship").contentType(MediaType.APPLICATION_JSON).content("{broken");
-            if(mode==4) req.with(r->{r.setRemoteAddr("::1");return r;});
-            response(req,401);
-        }
-        environment.setActiveProfiles("dev"); admin.setLocalAdminEnabled(true); admin.setLocalAdminKey("order-test-admin");
-        response(post("/order/20261024000001/ship").contentType(MediaType.APPLICATION_JSON).content("{broken"),401);
-        response(post("/order/20261024000001/ship").header("X-Local-Admin-Key","wrong").contentType(MediaType.APPLICATION_JSON).content("{broken"),401);
-    }
 
     @Test void malformedRequestsCannotWriteOrCallProductHttp() throws Exception {
         for(String body:List.of("{}","null","{\"items\":[]}","{\"items\":[null],\"addressId\":1}",
@@ -202,22 +189,23 @@ class OrderDatabaseIntegrationTest {
         assertThat(HTTP_CALLS).hasValue(0); assertThat(count("t_orders")).isZero();
     }
 
-    @Test void addressOwnershipLengthAndImmutableShippingSnapshot() throws Exception {
-        long p=product("p",10,"1.00",null);
-        long address=insert("INSERT INTO t_address(user_id,receiver_name,receiver_phone,province,city,detail_address) VALUES (?,?,?,?,?,?)",a,"A","1","省","市","路");
-        var request=dto(p,1); request.setAddressId(address);
-        // 重新构造引用模式，直接字段即使null也不能混入。
-        request=json.readValue("{\"items\":[{\"productId\":"+p+",\"quantity\":1}],\"addressId\":"+address+"}",OrderCreateDTO.class);
-        String no=commands.create(a,request).orderNo();
-        jdbc.update("UPDATE t_address SET detail_address='新地址',deleted=1 WHERE id=?",address);
-        assertThat(queries.detail(a,no).receiverAddress()).isEqualTo("省 市 路");
-        assertCode(404,()->commands.create(a,reference(p,address)));
-        long other=insert("INSERT INTO t_address(user_id,receiver_name,receiver_phone,detail_address) VALUES (?,?,?,?)",b,"B","1","路");
-        assertCode(404,()->commands.create(a,reference(p,other)));
-        long longAddress=insert("INSERT INTO t_address(user_id,receiver_name,receiver_phone,province,detail_address) VALUES (?,?,?,?,?)",a,"A","1","x","x".repeat(254));
-        assertCode(400,()->commands.create(a,reference(p,longAddress)));
-        jdbc.update("UPDATE t_address SET detail_address=? WHERE id=?","x".repeat(253),longAddress);
-        assertThat(commands.create(a,reference(p,longAddress)).orderNo()).hasSize(14);
+    @Test void directOrderWithoutAddressReplaysAndStoresNoShippingData() throws Exception {
+        long product=product("digital",10,"1.00",null);
+        String body="{\"items\":[{\"productId\":"+product+",\"quantity\":2}]}";
+        var first=response(post("/order").header("Authorization",tokenA).header("Idempotency-Key","digital")
+                .contentType(MediaType.APPLICATION_JSON).content(body),200).get("data");
+        var replay=response(post("/order").header("Authorization",tokenA).header("Idempotency-Key","digital")
+                .contentType(MediaType.APPLICATION_JSON).content(body),200).get("data");
+        assertThat(replay).isEqualTo(first);
+        String no=first.get("orderNo").asText();
+        var detail=api("GET","/order/"+no,null,tokenA,200);
+        assertThat(detail.has("receiverAddress")).isFalse();
+        assertThat(detail.has("trackingNo")).isFalse();
+        assertThat(jdbc.queryForObject("""
+                SELECT COUNT(*) FROM t_orders WHERE order_no=?
+                  AND receiver_name IS NULL AND receiver_phone IS NULL AND receiver_address IS NULL
+                """,Long.class,no)).isEqualTo(1L);
+        assertCounts(product,8,2);
     }
 
     @Test void userIsRecheckedAfterHttpAndSnapshotsUseLockedProductValues() {
@@ -302,24 +290,15 @@ class OrderDatabaseIntegrationTest {
         assertThat(api("GET","/order/page?status=1",null,tokenA,200).get("total").asInt()).isEqualTo(1);
     }
 
-    @Test void payAndCancelAreSingleTransitionsAndShippingCannotOverrideThem() {
+    @Test void payAndCancelAreSingleTransitions() {
         long p=product("p",10,"1",null);
         String no=commands.create(a,dto(p,2)).orderNo();
-        assertCode(409,()->commands.ship(no,ship()));
+
         commands.pay(a,no); assertCode(409,()->commands.pay(a,no)); assertCounts(p,8,2);
-        commands.cancel(a,no); assertCode(409,()->commands.cancel(a,no)); assertCode(409,()->commands.ship(no,ship()));
+        commands.cancel(a,no); assertCode(409,()->commands.cancel(a,no));
         assertThat(queries.detail(a,no).payTime()).isNotNull(); assertCounts(p,10,0);
     }
 
-    @Test void reservedStatesTwoAndFourDoNotAddNewTransitionEndpoints() {
-        long p=product("p",10,"1",null);
-        String no=commands.create(a,dto(p,1)).orderNo();
-        jdbc.update("UPDATE t_orders SET status=2 WHERE order_no=?",no); commands.ship(no,ship());
-        assertCode(409,()->commands.ship(no,ship()));
-        assertThat(queries.status(a,no).status()).isEqualTo(3); assertCode(409,()->commands.cancel(a,no));
-        jdbc.update("UPDATE t_orders SET status=4 WHERE order_no=?",no);
-        assertCode(409,()->commands.pay(a,no)); assertCode(409,()->commands.ship(no,ship())); assertCode(409,()->commands.cancel(a,no));
-    }
 
     @Test void cancellationRestoresSoftDeletedAndDisabledProductsWithoutCategoryLocks() {
         long category=category(0),p=product("p",10,"1",category);
@@ -389,12 +368,6 @@ class OrderDatabaseIntegrationTest {
         assertCounts(p,10,0);
     }
 
-    @Test void shippingAndCancelHaveOnlyOneWinner() throws Exception {
-        long p=product("p",10,"1",null);String no=commands.create(a,dto(p,1)).orderNo();commands.pay(a,no);
-        assertThat(race(()->commands.ship(no,ship()),()->commands.cancel(a,no))).containsExactlyInAnyOrder(200,409);
-        int status=queries.status(a,no).status();
-        assertThat(status).isIn(3,5);assertCounts(p,status==5?10:9,status==5?0:1);
-    }
 
     @Test void payRacingCancelLeavesCanceledOrderAndRestoresOnce() throws Exception {
         long p=product("p",10,"1",null);String no=commands.create(a,dto(p,1)).orderNo();
@@ -457,8 +430,8 @@ class OrderDatabaseIntegrationTest {
         assertCounts(p,8,2);assertCounts(q,8,2);
     }
 
-    @Test void detailUsesOneSnapshotWhileShippingCommits() throws Exception {
-        long p=product("p",10,"1",null);String no=commands.create(a,dto(p,1)).orderNo();commands.pay(a,no);
+    @Test void detailUsesOneSnapshotWhilePaymentCommits() throws Exception {
+        long p=product("p",10,"1",null);String no=commands.create(a,dto(p,1)).orderNo();
         var reading=new CountDownLatch(1);var committed=new CountDownLatch(1);
         doAnswer(invocation->{
             if(Thread.currentThread().getName().equals("order-snapshot-reader")){
@@ -469,9 +442,9 @@ class OrderDatabaseIntegrationTest {
         var pool=Executors.newSingleThreadExecutor(r->new Thread(r,"order-snapshot-reader"));
         try{
             var detail=pool.submit(()->queries.detail(a,no));assertThat(reading.await(5,TimeUnit.SECONDS)).isTrue();
-            commands.ship(no,ship());committed.countDown();
-            var old=detail.get(8,TimeUnit.SECONDS);assertThat(old.status()).isEqualTo(1);assertThat(old.logisticsCompany()).isNull();
-            assertThat(queries.detail(a,no).status()).isEqualTo(3);
+            commands.pay(a,no);committed.countDown();
+            var old=detail.get(8,TimeUnit.SECONDS);assertThat(old.status()).isZero();assertThat(old.payTime()).isNull();
+            assertThat(queries.detail(a,no).status()).isEqualTo(1);
         }finally{committed.countDown();pool.shutdownNow();}
     }
 
@@ -671,16 +644,14 @@ class OrderDatabaseIntegrationTest {
     @Test void cartCheckoutRechecksPriceAndStockAndPreservesUnselectedItems() throws Exception {
         long pid = product("phone", 5, "3.25", null);
         long sid = defaultSku(pid), other = sku(pid, "white", 5, "1.00");
-        long address = cartAddress(a);
         cart.add(a, sid, 2);
         cart.add(a, other, 1);
         cart.update(a, other, null, false);
         String key = "cart-price";
-        String body = cartPayload(sid, 2, address);
+        String body = digitalCartPayload(sid, 2);
         response(post("/cart/checkout").header("Authorization", tokenA)
                 .contentType(MediaType.APPLICATION_JSON).content(body), 400);
         response(cartCheckout(body.substring(0, body.length() - 1) + ",\"totalAmount\":0}", key), 400);
-        response(cartCheckout(cartPayload(sid, 2, cartAddress(b)), key), 404);
         // Another buyer takes most of the stock after this buyer has prepared checkout.
         commands.create(b, skuDto(sid, 4), "other-buyer");
         response(cartCheckout(body, key), 409);
@@ -688,10 +659,12 @@ class OrderDatabaseIntegrationTest {
         assertThat(cart.list(a).get(0).availability().name()).isEqualTo("OUT_OF_STOCK");
         api("GET", "/order/idempotency/" + key, null, tokenA, 404);
         cart.update(a, sid, 1, null);
-        body = cartPayload(sid, 1, address);
+        body = digitalCartPayload(sid, 1);
         afterPreread = () -> jdbc.update("UPDATE t_product_sku SET price=8.50 WHERE id=?", sid);
         var receipt = response(cartCheckout(body, key), 200).get("data");
         assertThat(receipt.get("totalAmount").decimalValue()).isEqualByComparingTo("8.50");
+        assertThat(jdbc.queryForObject("SELECT receiver_address FROM t_orders WHERE order_no=?", String.class,
+                receipt.get("orderNo").asText())).isNull();
         assertSku(sid, 0, 5);
         assertSku(other, 5, 0);
         assertThat(cart.list(a)).singleElement().satisfies(line -> {
@@ -704,9 +677,9 @@ class OrderDatabaseIntegrationTest {
         api("GET", "/order/idempotency/" + key, null, tokenB, 404);
         cart.add(a, sid, 3);
         assertThat(response(cartCheckout(body, key), 200).get("data")).isEqualTo(receipt);
-        response(cartCheckout(cartPayload(sid, 3, address), key), 409);
+        response(cartCheckout(digitalCartPayload(sid, 3), key), 409);
         assertThat(cart.list(a).get(0).quantity()).isEqualTo(3);
-        var direct = new CartCheckoutDTO(address, null, List.of(new CartCheckoutDTO.Item(sid, 1))).toOrder();
+        var direct = new CartCheckoutDTO(null, null, List.of(new CartCheckoutDTO.Item(sid, 1))).toOrder();
         response(post("/order").header("Authorization", tokenA).header("Idempotency-Key", key)
                 .contentType(MediaType.APPLICATION_JSON).content(payload(direct)), 409);
         assertThat(count("t_orders")).isEqualTo(2);
@@ -799,6 +772,10 @@ class OrderDatabaseIntegrationTest {
         return "{\"addressId\":%d,\"items\":[{\"skuId\":%d,\"quantity\":%d}]}".formatted(address, sid, quantity);
     }
 
+    private String digitalCartPayload(long sid, int quantity) {
+        return "{\"items\":[{\"skuId\":%d,\"quantity\":%d}]}".formatted(sid, quantity);
+    }
+
     private MockHttpServletRequestBuilder cartCheckout(String body, String key) {
         return post("/cart/checkout").header("Authorization", tokenA).header("Idempotency-Key", key)
                 .contentType(MediaType.APPLICATION_JSON).content(body);
@@ -815,7 +792,7 @@ class OrderDatabaseIntegrationTest {
     private OrderCommandFacade newFacade(){
         return new OrderCommandFacade(context.getBean(OrderInput.class),context.getBean(OrderUsers.class),
             context.getBean(ProductDetailHttpClient.class),writes,context.getBean(OrderTransactions.class),
-            context.getBean(Clock.class),context.getBean(com.xiaoke.order.config.OrderProperties.class),context.getBean(OrderIdempotency.class));
+            context.getBean(Clock.class),context.getBean(com.xiaoke.order.config.OrderProperties.class),context.getBean(OrderIdempotency.class),context.getBean(OrderCloseService.class));
     }
     private List<Integer> race(Runnable first,Runnable second) throws Exception {
         var start=new CyclicBarrier(2);var pool=Executors.newFixedThreadPool(2);
@@ -836,7 +813,6 @@ class OrderDatabaseIntegrationTest {
     private String createApi(long pid,int quantity)throws Exception{return api("POST","/order",payload(dto(pid,quantity)),tokenA,200).get("orderNo").asText();}
     private JsonNode api(String method,String path,String body,String token,int expected)throws Exception{
         var req=request(HttpMethod.valueOf(method),path);
-        if(path.endsWith("/ship") && token==null) req.header("Authorization",adminToken());
         if(token!=null)req.header("Authorization",token);
         if(body!=null)req.contentType(MediaType.APPLICATION_JSON).content(body);
         return response(req,expected).get("data");
@@ -850,7 +826,8 @@ class OrderDatabaseIntegrationTest {
     private String payload(OrderCreateDTO dto) throws Exception {
         com.fasterxml.jackson.databind.node.ObjectNode tree=json.valueToTree(dto);
         if(dto.getAddressId()==null) tree.remove("addressId");
-        else tree.remove(List.of("receiverName","receiverPhone","receiverAddress"));
+        if(!dto.hasLegacyShipping()) tree.remove(List.of("receiverName","receiverPhone","receiverAddress"));
+        if(dto.getAddressId()!=null) tree.remove(List.of("receiverName","receiverPhone","receiverAddress"));
         return json.writeValueAsString(tree);
     }
     private OrderCreateDTO dto(long pid,int quantity){
@@ -858,7 +835,6 @@ class OrderDatabaseIntegrationTest {
         var dto=new OrderCreateDTO();dto.setItems(List.of(item));dto.setReceiverName("A");dto.setReceiverPhone("1");dto.setReceiverAddress("Road");return dto;
     }
     private OrderCreateDTO reference(long pid,long aid){var dto=new OrderCreateDTO();dto.setItems(dto(pid,1).getItems());dto.setAddressId(aid);return dto;}
-    private OrderShipDTO ship(){var dto=new OrderShipDTO();dto.setLogisticsCompany("test");dto.setTrackingNo("T1");return dto;}
     private long product(String name,int stock,String price,Long category){
         long pid=insert("INSERT INTO t_product(name,price,stock,category_id) VALUES (?,?,?,?)",name,new java.math.BigDecimal(price),stock,category);
         jdbc.update("INSERT INTO t_product_sku(product_id,name,spec_json,spec_hash,price,stock,sales,is_default) SELECT id,'default','{}',SHA2('{}',256),price,stock,sales,1 FROM t_product WHERE id=?",pid);
@@ -923,32 +899,14 @@ class OrderDatabaseIntegrationTest {
         return adminJwt.issue(new com.xiaoke.common.auth.admin.AdminPrincipal(1,"test_admin",0));
     }
 
-    @Test void shippingUsesFourRoleMatrixAndFreshPermissions() throws Exception {
+    @Test void orderReadUsesFourRoleMatrixAndFreshPermissions() throws Exception {
         String token=adminToken();
         for(long role:List.of(1L,2L,3L,4L)) {
             jdbc.update("DELETE FROM t_admin_account_role WHERE admin_id=1");
             jdbc.update("INSERT INTO t_admin_account_role(admin_id,role_id) VALUES(1,?)",role);
-            response(post("/order/20261024000001/ship").header("Authorization",token)
-                    .contentType(MediaType.APPLICATION_JSON).content("{broken"),role==1 || role==3?400:403);
+            response(get("/admin/orders/page").header("Authorization",token),role==1 || role==3?200:403);
         }
-        jdbc.update("DELETE FROM t_admin_account_role WHERE admin_id=1");
-        response(post("/order/20261024000001/ship").header("Authorization",tokenA)
-                .contentType(MediaType.APPLICATION_JSON).content("{broken"),401);
+        response(get("/admin/orders/page").header("Authorization",tokenA),401);
     }
 
-    @Test void shippingAuditIsAtomicAndRepeatedShippingAddsNoSecondSuccess() throws Exception {
-        long pid=product("audit-order",3,"2.00",null); String no=createApi(pid,1);
-        api("POST","/order/"+no+"/pay",null,tokenA,200);
-        String shipping="{\"logisticsCompany\":\"Synthetic-Company-Secret\",\"trackingNo\":\"Synthetic-Tracking-Secret\"}";
-        jdbc.execute("CREATE TRIGGER verify_ship_audit_failure BEFORE INSERT ON t_admin_audit FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='synthetic audit failure'");
-        try { api("POST","/order/"+no+"/ship",shipping,null,500); }
-        finally { jdbc.execute("DROP TRIGGER verify_ship_audit_failure"); }
-        assertThat(jdbc.queryForObject("SELECT status FROM t_orders WHERE order_no=?",Integer.class,no)).isEqualTo(1);
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM t_admin_audit WHERE action='ORDER_SHIP'",Long.class)).isZero();
-        api("POST","/order/"+no+"/ship",shipping,null,200);
-        api("POST","/order/"+no+"/ship",shipping,null,409);
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM t_admin_audit WHERE action='ORDER_SHIP' AND target_id=?",Long.class,no)).isEqualTo(1);
-        assertThat(jdbc.queryForObject("SELECT changes_json FROM t_admin_audit WHERE action='ORDER_SHIP'",String.class))
-                .doesNotContain("Synthetic","receiver","tracking","Company");
-    }
 }

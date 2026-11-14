@@ -6,11 +6,13 @@ import org.springframework.context.annotation.Profile;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
+import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.security.GeneralSecurityException;
 import java.security.KeyPairGenerator;
 import java.util.Base64;
 import java.util.HashMap;
+import java.time.LocalDateTime;
 import java.util.Map;
 import java.util.Optional;
 
@@ -51,8 +53,14 @@ public class DemoPaymentGateway implements PaymentGateway {
     }
 
     @Override
-    public String checkout(PaymentOrder payment, String orderNo) {
+    public String checkout(PaymentOrder payment, String orderNo, LocalDateTime expiresAtUtc) {
         return "/orders/" + orderNo + "/demo-checkout";
+    }
+
+    @Override
+    public boolean closeUnpaid(PaymentOrder payment) {
+        // The committed order claim fences new demo receipts under the same order row lock.
+        return query(payment).isEmpty();
     }
 
     void recordPaid(PaymentOrder payment) {
@@ -68,6 +76,26 @@ public class DemoPaymentGateway implements PaymentGateway {
                 "SELECT EXISTS(SELECT 1 FROM t_demo_payment_trade WHERE payment_no=?)",
                 Boolean.class, payment.paymentNo()));
         return paid ? Optional.of(trade(payment)) : Optional.empty();
+    }
+
+    @Override
+    public void submitRefund(PaymentOrder payment, String refundNo, BigDecimal amount) {
+        if (query(payment).isEmpty()) {
+            throw PaymentNotification.invalidTrade();
+        }
+        jdbc.update("""
+                INSERT INTO t_demo_refund_trade(payment_no,refund_no,amount) VALUES (?,?,?)
+                ON DUPLICATE KEY UPDATE payment_no=payment_no
+                """, payment.paymentNo(), refundNo, amount);
+    }
+
+    @Override
+    public Optional<RefundTrade> queryRefund(PaymentOrder payment, String refundNo) {
+        return jdbc.query("""
+                SELECT payment_no,refund_no,amount FROM t_demo_refund_trade WHERE payment_no=?
+                """, (row, index) -> new RefundTrade(ACCOUNT, row.getString("payment_no"),
+                trade(payment).tradeNo(), row.getString("refund_no"), row.getBigDecimal("amount"),
+                RefundState.SUCCEEDED), payment.paymentNo()).stream().findFirst();
     }
 
     Map<String, String> signedNotification(PaymentOrder payment) {

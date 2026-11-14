@@ -57,9 +57,7 @@ public class DefaultOrderQueryService implements OrderQueryService {
                     .map(item -> new AdminOrderDetailVO.Item(item.getProductName(), item.getSkuName(),
                             item.getQuantity(), OrderMoney.amount(item.getPrice(), item.getQuantity(), 500))).toList();
             return new AdminOrderDetailVO(order.getOrderNo(), order.getStatus(), status(order).description(),
-                    OrderMoney.price(order.getTotalAmount()), order.getReceiverName(), order.getReceiverPhone(),
-                    order.getReceiverAddress(), order.getRemark(), order.getLogisticsCompany(), order.getTrackingNo(),
-                    order.getShipTime(), values);
+                    OrderMoney.price(order.getTotalAmount()), order.getRemark(), values);
         });
     }
 
@@ -74,9 +72,8 @@ public class DefaultOrderQueryService implements OrderQueryService {
                         item.getQuantity(), OrderMoney.amount(item.getPrice(), item.getQuantity(), 500),
                         item.getSkuId(), item.getSkuName(), item.getSkuSpec())).toList();
         return new OrderDetailVO(order.getOrderNo(), order.getStatus(), status(order).description(),
-                OrderMoney.price(order.getTotalAmount()), order.getReceiverName(), order.getReceiverPhone(),
-                order.getReceiverAddress(), order.getRemark(), order.getLogisticsCompany(), order.getTrackingNo(),
-                order.getCreateTime(), order.getPayTime(), order.getShipTime(), order.getFinishTime(), values);
+                OrderMoney.price(order.getTotalAmount()), order.getRemark(),
+                order.getCreateTime(), order.getPayTime(), values);
     }
     public OrderStatusVO status(Long uid,String no) {
         input.orderNo(no);
@@ -84,7 +81,7 @@ public class DefaultOrderQueryService implements OrderQueryService {
             var order=owned(uid,no);
             var values=OrderItemRules.checked(order,items.selectActiveByOrderId(order.getId())).stream()
                 .map(item->new OrderStatusItemVO(item.getProductName(),item.getQuantity())).toList();
-            return new OrderStatusVO(no,order.getStatus(),status(order).description(),order.getLogisticsCompany(),order.getTrackingNo(),values);
+            return new OrderStatusVO(no,order.getStatus(),status(order).description(),values);
         });
     }
     private Orders owned(Long uid,String no) {

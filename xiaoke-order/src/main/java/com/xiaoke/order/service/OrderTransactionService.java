@@ -1,10 +1,11 @@
 package com.xiaoke.order.service;
 import com.xiaoke.common.exception.BusinessException;
-import com.xiaoke.order.adapter.address.*;
+import com.xiaoke.common.inventory.InventoryLedger.Event;
 import com.xiaoke.order.adapter.category.OrderCategoryReadAdapter;
 import com.xiaoke.order.adapter.product.*;
 import com.xiaoke.order.allocator.OrderNoAllocator;
 import com.xiaoke.order.dto.*;
+import com.xiaoke.order.config.OrderProperties;
 import com.xiaoke.order.entity.*;
 import com.xiaoke.order.enums.OrderStatus;
 import com.xiaoke.order.mapper.*;
@@ -12,9 +13,9 @@ import com.xiaoke.order.payment.MockPaymentAdapter;
 import com.xiaoke.order.vo.OrderCreateVO;
 import com.xiaoke.order.idempotency.OrderIdempotency;
 import lombok.RequiredArgsConstructor;
-import com.xiaoke.audit.*;
-import static com.xiaoke.audit.AuditChanges.Field.*;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.beans.factory.ObjectProvider;
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -25,8 +26,8 @@ import static com.xiaoke.order.service.OrderInput.rows;
 @Service @RequiredArgsConstructor
 public class OrderTransactionService {
     private final OrderTransactions transactions;
+    private final OrderProperties properties;
     private final OrderUsers users;
-    private final OrderAddressReadAdapter addresses;
     private final OrderCategoryReadAdapter categories;
     private final OrderProductMapper products;
     private final OrdersMapper orders;
@@ -34,7 +35,6 @@ public class OrderTransactionService {
     private final OrderNoAllocator allocator;
     private final OrderIdempotency idempotency;
     private final OrderSkus skus;
-    private final AuditWriter audit;
     private final CartService cart;
     private final PaymentOrderMapper payments;
     private final ObjectProvider<MockPaymentAdapter> mockPayment;
@@ -57,9 +57,6 @@ public class OrderTransactionService {
             var previous=idempotency.replay(uid,request,true);
             if (previous!=null) { return previous; }
             if (fromCart) { cart.requireSelection(uid,dto.getItems()); }
-            ShippingSnapshot shipping=dto.getAddressId()==null
-                    ? new ShippingSnapshot(dto.getReceiverName(),dto.getReceiverPhone(),dto.getReceiverAddress())
-                    : addresses.readOwned(uid,dto.getAddressId());
             var inputs=skus.resolve(dto.getItems());
             var productIds=inputs.stream().map(OrderSkus.Selection::productId).distinct().sorted().toList();
             var discovery=categories.discover(productIds);
@@ -87,8 +84,9 @@ public class OrderTransactionService {
             String no=allocator.next(day);
             Orders order=new Orders();
             order.setOrderNo(no); order.setUserId(uid); order.setTotalAmount(total); order.setStatus(OrderStatus.PENDING_PAYMENT.code());
-            order.setReceiverName(shipping.receiverName()); order.setReceiverPhone(shipping.receiverPhone());
-            order.setReceiverAddress(shipping.receiverAddress()); order.setRemark(dto.getRemark()); order.setDeleted(0);
+            order.setRemark(dto.getRemark()); order.setDeleted(0);
+            order.setPaymentExpiresAt(orders.utcNow().plusMinutes(properties.getPaymentTimeoutMinutes()));
+            order.setCloseNextAttemptAt(order.getPaymentExpiresAt());
             rows(orders.insert(order),1);
             // Reserve the unique order number before journal events so the existing number-collision retry remains authoritative.
             for (var item:snapshots) { skus.deduct(item.getSkuId(),item.getQuantity(),no); }
@@ -102,52 +100,42 @@ public class OrderTransactionService {
     }
     public void payOnce(Long uid,String no) {
         var mock=mockPayment.getIfAvailable();
-        if (mock==null) { throw new BusinessException(403,"模拟支付仅在独立测试模式可用"); }
+        if (mock==null) { throw new BusinessException(403,"模拟支付通道暂未启用"); }
         transactions.write(()->{
             users.lock(uid);
             var order=requireOrder(orders.lockOwned(uid,no));
-            if (status(order)!=OrderStatus.PENDING_PAYMENT || payments.findByOrderId(order.getId())!=null
+            if (status(order)!=OrderStatus.PENDING_PAYMENT || !order.acceptsPayment(orders.utcNow()) || payments.findByOrderId(order.getId())!=null
                     || !mock.pay(order)) { throw conflict(); }
             return null;
         });
     }
-    public void shipOnce(String no,OrderShipDTO dto) {
-        transactions.write(()->{
-            var order=requireOrder(orders.lockByNo(no)); var status=status(order);
-            if ((status!=OrderStatus.PAID && status!=OrderStatus.PREPARING)
-                    || orders.casShip(order.getId(),dto.getLogisticsCompany(),dto.getTrackingNo())!=1) { throw conflict(); }
-            audit.record(AuditAction.ORDER_SHIP,no,AuditChanges.start().put(STATUS,order.getStatus(),3));
-            return null;
-        });
+    void cancelAndRestore(Orders order) {
+        if (orders.casCancel(order.getId(), order.getUserId()) != 1) { throw conflict(); }
+        restoreInventory(order, Event.CANCEL_RESTORE);
     }
-    public void cancelOnce(Long uid,String no) {
-        transactions.write(()->{
-            users.lock(uid);
-            var order=requireOrder(orders.lockOwned(uid,no)); var status=status(order);
-            if (payments.findByOrderId(order.getId())!=null) {
-                throw new BusinessException(409,"订单已有支付单，暂不支持直接取消");
-            }
-            boolean legacyTestCancel=mockPayment.getIfAvailable()!=null
-                    && (status==OrderStatus.PAID || status==OrderStatus.PREPARING);
-            if (status!=OrderStatus.PENDING_PAYMENT && !legacyTestCancel) { throw conflict(); }
-            var snapshots=OrderItemRules.checked(order,items.selectAllByOrderId(order.getId()));
-            for (Long pid:snapshots.stream().map(OrderItem::getProductId).distinct().sorted().toList()) {
-                var product=products.selectForUpdate(pid);
-                if (product==null) { throw new BusinessException(500,"原商品缺失"); }
-            }
-            var restores=new TreeMap<Long,OrderItem>();
-            for(var item:snapshots) {
-                Long sid=skus.historicalSku(item);
-                if(restores.put(sid,item)!=null) throw new BusinessException(500,"重复的恢复SKU");
-            }
-            for(var entry:restores.entrySet()) {
-                var item=entry.getValue();var sku=skus.lock(entry.getKey(),item.getProductId(),false);
-                if ((long)sku.getStock()+item.getQuantity()>Integer.MAX_VALUE || sku.getSales()<item.getQuantity()) { throw conflict(); }
-            }
-            if (orders.casCancel(order.getId(),uid)!=1) { throw conflict(); }
-            for (var entry:restores.entrySet()) {skus.restore(entry.getKey(),entry.getValue().getQuantity(),no);}
-            return null;
-        });
+
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void refundAndRestore(Orders order) {
+        rows(orders.closeRefunded(order.getId()), 1);
+        restoreInventory(order, Event.REFUND_RESTORE);
+    }
+
+    private void restoreInventory(Orders order, Event event) {
+        var snapshots=OrderItemRules.checked(order,items.selectAllByOrderId(order.getId()));
+        for (Long pid:snapshots.stream().map(OrderItem::getProductId).distinct().sorted().toList()) {
+            var product=products.selectForUpdate(pid);
+            if (product==null) { throw new BusinessException(500,"原商品缺失"); }
+        }
+        var restores=new TreeMap<Long,OrderItem>();
+        for(var item:snapshots) {
+            Long sid=skus.historicalSku(item);
+            if(restores.put(sid,item)!=null) throw new BusinessException(500,"重复的恢复SKU");
+        }
+        for(var entry:restores.entrySet()) {
+            var item=entry.getValue();var sku=skus.lock(entry.getKey(),item.getProductId(),false);
+            if ((long)sku.getStock()+item.getQuantity()>Integer.MAX_VALUE || sku.getSales()<item.getQuantity()) { throw conflict(); }
+        }
+        for (var entry:restores.entrySet()) {skus.restore(entry.getKey(),entry.getValue().getQuantity(),order.getOrderNo(),event);}
     }
     private Orders requireOrder(Orders row) { if (row==null) { throw new BusinessException(404,"订单不存在"); } return row; }
     private OrderStatus status(Orders row) {
